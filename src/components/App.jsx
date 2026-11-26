@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate  } from 'react-router
 import { LoginScreen } from './LoginScreen';
 import PrimaryNavigation from './PrimaryNavigation';
 import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
-import { RequireAuth, ScreenLoading } from './RequireAuth';
+import { CandidateAnketaGate, RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { scheduleLatencyProbe } from './latencyProbeRemote';
 import { installPushSignOutCleanup, refreshPushToken } from './pushNotificationsRemote';
@@ -258,7 +258,7 @@ export const App = () => {
 
   return (
     <PrimaryNavigationSlotProvider>
-      {(authStatus === 'in' || showsRememberedMatching) && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
+      {(authStatus === 'in' || showsRememberedMatching) && ['/matching', '/matching/create-profile', '/my-profile', '/anketa'].includes(normalizedPathname) && <PrimaryNavigation />}
       {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) && !READ_ONLY_INSPECTOR_WRITABLE_PATHS.includes(normalizedPathname) ? (
         <ReadOnlyBadge />
       ) : null}
@@ -285,6 +285,9 @@ export const App = () => {
           угоди, який залогінена людина бачила тут до редиректу. */}
       <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to={specialHomeRoute || '/my-profile'} replace />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}>{regularScreen(<MyProfile />)}</RequireAuth>} />
+      {/* Посилання для кандидаток — донорок і СМ (`utils/candidateAnketa`):
+          анкету заповнюють без входу, акаунт створюють у її кінці. */}
+      <Route path="/anketa" element={<CandidateAnketaGate status={authStatus}><MyProfile candidate /></CandidateAnketaGate>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       {/* Стрічка — єдиний екран, який на 'pending' показують з кеша

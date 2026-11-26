@@ -49,6 +49,7 @@ import {
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
 import { settlePrimaryAccount } from 'utils/accountLinks';
+import { CANDIDATE_ANKETA_ROLES, readCandidateDraftFields, takeCandidateSignup } from 'utils/candidateAnketa';
 import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from 'utils/googleAuth';
 
 const MATCHING_ROUTE = '/matching';
@@ -562,12 +563,19 @@ const describeTelegramAccount = (profile = {}) => {
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const { language, setLanguage } = useAppSettings();
   const tr = (text, vars) => uiText(text, language, vars);
-  const [isChecked, setIsChecked] = useState(false);
-  const [selectedRole, setSelectedRole] = useState('');
+  // Кандидатка з посилання `/anketa`, що обрала Telegram: роль і згоду вона
+  // вже дала там, тож форма одразу на «Створити акаунт» з ними
+  // (`utils/candidateAnketa`).
+  const candidateEntryLocation = useLocation();
+  const candidateRole = CANDIDATE_ANKETA_ROLES.includes(candidateEntryLocation.state?.candidateRole)
+    ? candidateEntryLocation.state.candidateRole
+    : '';
+  const [isChecked, setIsChecked] = useState(() => Boolean(candidateRole && candidateEntryLocation.state?.termsAccepted));
+  const [selectedRole, setSelectedRole] = useState(candidateRole);
   // Роль питається лише на вкладці «Створити акаунт». Досі її вимагали на
   // кожному вході й записували в анкету — тобто вхід переписував роль, обрану
   // в «Моєму профілі» (`buildAuthLoginPayload`).
-  const [authMode, setAuthMode] = useState('login');
+  const [authMode, setAuthMode] = useState(candidateRole ? 'register' : 'login');
   const isRegisterMode = authMode === 'register';
   // Вхід не вдався, а акаунта з такою поштою перевірка не знає — під кнопкою
   // з'являється пропозиція створити його (а не мовчазний «невірний пароль»).
@@ -869,8 +877,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // імʼя з Telegram (пошти немає — людина без неї й реєструвалась) або пошта
   // й імʼя з Google (номера немає), роль — з форми.
   const finishProviderRegistration = async (uid, profileData, role) => {
+    // Почали на посиланні для кандидаток: набране там до входу лягає в нову
+    // анкету (номер — з Telegram, він підтверджений; решта — набране людиною).
+    const candidateSignup = takeCandidateSignup();
+    const candidateDraft = candidateSignup && candidateSignup.role === role ? readCandidateDraftFields() : {};
     const uploadedInfo = {
       ...profileData,
+      ...candidateDraft,
+      ...(profileData.phone ? { phone: profileData.phone } : {}),
       areTermsConfirmed: todayDays,
       registrationDate: todayDays,
       ...buildAuthSessionPayload({ todayDays, todayDash }),

@@ -11,7 +11,7 @@ const appSource = () => fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8')
  * і саме це стереже тест нижче. Сторінка посилань з листів (`/auth/action`)
  * бази не читає зовсім — лише Firebase Auth з одноразовим кодом з адреси.
  */
-const PUBLIC_ROUTES = ['/login', '/policy', '/p/:token', '/auth/action'];
+const PUBLIC_ROUTES = ['/login', '/policy', '/p/:token', '/auth/action', '/anketa'];
 
 // Маршрути, які самі лише перенаправляють: гардити їх нема сенсу, бо вони
 // нічого не рендерять — ціль перенаправлення вже за межею.
@@ -71,6 +71,18 @@ describe('App route guards', () => {
     expect(pageSource).not.toMatch(/firebase\/database|fetchUserById|readProfileFromNodes|profileContacts/);
   });
 
+  // Посилання для кандидаток (`/anketa`) — гостьова анкета без входу. Публічною
+  // її тримає не відсутність межі, а власна межа: `CandidateAnketaGate` чекає
+  // на Firebase і монтує `MyProfile` лише як гостьову анкету (`candidate`),
+  // яка до створення акаунта бази не питає.
+  it('гостьова анкета для кандидаток стоїть за власною межею', () => {
+    const route = parseRoutes().find(item => item.path === '/anketa');
+    expect(route.chunk).toContain('<CandidateAnketaGate status={authStatus}><MyProfile candidate />');
+    const gateSource = fs.readFileSync(path.join(__dirname, 'RequireAuth.jsx'), 'utf8');
+    expect(gateSource).toContain("if (status === 'pending') {");
+    expect(gateSource).toContain("if (status === 'in' && !startedAsGuestRef.current) {");
+  });
+
   it('reads every route in the table', () => {
     const paths = parseRoutes().map(route => route.path);
     expect(paths).toEqual(expect.arrayContaining(['/login', '/matching', '/my-profile', '*']));
@@ -80,7 +92,7 @@ describe('App route guards', () => {
     const source = appSource();
 
     expect(source).toContain("const normalizedPathname = location.pathname.replace(/\\/+$/, '') || '/';");
-    expect(source).toContain("['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname)");
+    expect(source).toContain("['/matching', '/matching/create-profile', '/my-profile', '/anketa'].includes(normalizedPathname)");
   });
 
   /**

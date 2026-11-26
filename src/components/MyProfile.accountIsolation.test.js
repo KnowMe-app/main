@@ -14,8 +14,8 @@ describe('MyProfile account isolation', () => {
     source.indexOf('const saveState = (nextState')
   );
   const existingAccountBranch = authBody.slice(
-    authBody.indexOf('if (methods.length > 0) {'),
-    authBody.indexOf('} else {')
+    authBody.indexOf('if (accountExists) {'),
+    authBody.indexOf('} else {', authBody.indexOf('if (accountExists) {'))
   );
 
   it('builds a minimal login payload that cannot contain another profile\'s fields', () => {
@@ -44,8 +44,14 @@ describe('MyProfile account isolation', () => {
   it('never sends the current form draft when signing into an existing account', () => {
     expect(existingAccountBranch).toContain('resetAuthenticatedProfileState();');
     expect(existingAccountBranch).toContain('buildAuthSessionPayload({ todayDays, todayDash })');
-    expect(existingAccountBranch).not.toContain('draftProfileData');
     expect(existingAccountBranch).not.toContain('buildAuthProfilePayload');
+    // Чернетка до наявного акаунта не їде записом анкети. Виняток — кандидатка
+    // з `/anketa`: її набране лягає незбереженими правками, і лише в порожні
+    // поля наявної анкети.
+    const draftUses = existingAccountBranch.split('draftProfileData').length - 1;
+    expect(draftUses).toBe(1);
+    expect(existingAccountBranch).toContain('if (candidate) {');
+    expect(existingAccountBranch.indexOf('if (candidate) {')).toBeLessThan(existingAccountBranch.indexOf('draftProfileData'));
   });
 
   it('invalidates profile state and queued saves when the auth identity changes', () => {

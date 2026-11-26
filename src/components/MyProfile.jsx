@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
-import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
+import { FaCheck, FaEye, FaEyeSlash, FaLock, FaTelegramPlane } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import { ScreenLoading } from './RequireAuth';
 import {
@@ -16,6 +16,7 @@ import {
   syncUserSearchIdIndex,
   updateProfileRole,
   refreshOwnProfileAfterMerge,
+  hasAccountRegistration,
 } from './config';
 import {
   LIKED_AUDIENCE,
@@ -40,11 +41,21 @@ import { readDeliveryDate } from '../utils/deliveryDateInput';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
+  getAdditionalUserInfo,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
 } from 'firebase/auth';
-import { requestVerificationEmail } from '../utils/emailVerification';
+import { FcGoogle } from 'react-icons/fc';
+import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from '../utils/googleAuth';
+import {
+  buildTelegramLoginLink,
+  createTelegramLoginNonce,
+  isTelegramLoginAvailable,
+  saveTelegramLoginAttempt,
+} from '../utils/telegramAuth';
+import { requestPasswordResetEmail, requestVerificationEmail } from '../utils/emailVerification';
 import Photos from './Photos';
 import InfoModal, {
   ModalActionRow,
@@ -63,6 +74,7 @@ import { authNotifications } from './authNotifications';
 import TelegramLinkCard from './TelegramLinkCard';
 import SignInMethodsCard from './SignInMethodsCard';
 import {
+  buildAuthLoginPayload,
   buildAuthProfilePayload,
   buildAuthSessionPayload,
   markAuthSession,
@@ -103,6 +115,7 @@ import {
   subscribePendingProfileEdits,
 } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
+import { CANDIDATE_ANKETA_ROLES, CANDIDATE_DRAFT_SKIPPED_FIELDS, markCandidateSignup, readCandidateRoleFromSearch } from '../utils/candidateAnketa';
 import {
   DEFAULT_REWARD_CURRENCY,
   MY_PROFILE_HABIT_CHOICES,
@@ -907,6 +920,99 @@ const RoleOption = styled.label`
   ${({ $suggested, $active }) => ($suggested && !$active ? 'border-color: var(--accent); box-shadow: 0 0 0 3px var(--km-accent-ring);' : '')}
 `;
 const RoleHint = styled.p`margin:12px 0 0;font-size:13px;line-height:1.45;color:var(--muted);`;
+// Вибір ролі на посиланні для кандидаток — перше питання сторінки, тож він
+// розгорнутий і крупний: два варіанти на всю ширину, мішень 48 px.
+const CandidateRoleCard = styled.section`
+  margin: ${CONTENT_SECTION_TOP_GAP}px var(--page-side) 16px;
+  padding: 16px 18px 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+
+  > h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); }
+`;
+const CandidateDialogBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(20, 16, 12, .45);
+`;
+const CandidateDialog = styled.div`
+  width: min(420px, 100%);
+  box-sizing: border-box;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--text);
+
+  h2 { margin: 0 0 8px; font-size: 18px; font-weight: 700; }
+  p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  b { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+`;
+const CandidateDialogActions = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  text-align: center;
+`;
+const CandidateMethods = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+`;
+// Рівні кнопки, як у формі входу (`AuthMethodButton`): заливка без рамки.
+const CandidateMethodButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--km-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
+  &:disabled { opacity: .6; cursor: default; }
+`;
+const CandidateOrEmail = styled.p`margin:14px 0 0;font-size:13px;color:var(--muted);text-align:center;`;
+const CandidateRoleHint = styled.p`margin:6px 0 14px;font-size:13px;line-height:1.45;color:var(--muted);`;
+const CandidateRoleGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+`;
+const CandidateRoleOption = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 10px;
+  white-space: nowrap;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
+  border-radius: var(--radius);
+  background: ${({ $active }) => ($active ? 'var(--km-action)' : 'var(--km-fill)')};
+  color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
+  &[data-missing='true'] { box-shadow: 0 0 0 2px var(--km-danger, #c0392b); }
+`;
 // Межа між двома анкетами однієї людини: друга стоїть під першою, і без
 // підпису її розділи читались би як продовження першої.
 // Заголовок анкети ролі — щабель вище за заголовок розділу (14 px), а не
@@ -1507,6 +1613,59 @@ const readMyProfileDraft = () => {
   }
 };
 
+// `?role=sm` / `?role=ed` у посиланні для кандидаток обирає роль наперед
+// (людина однаково може її змінити) — і лише тоді, коли в чернетці ролі ще
+// немає. Роль лягає і в чернетку пристрою одразу, ще до першого рендера:
+// перша відповідь Firebase («гостя немає») скидає стан і піднімає його саме з
+// чернетки (`resetAuthenticatedProfileState` → `restoreLocalDraft`), тож роль,
+// поставлена ефектом, до неї не доживала.
+
+// Одне нагадування кандидатці, що лишилось для збереження анкети: увійти
+// будь-яким способом угорі й погодитись з умовами.
+const candidateAuthReminder = (miss, email) => {
+  const parts = [];
+  if (miss.email) parts.push(email ? 'правильну пошту' : 'пошту');
+  if (miss.password) parts.push('пароль');
+  const fill = parts.length
+    ? `увійдіть угорі через Telegram чи Google або вкажіть ${parts.join(' і ')}`
+    : '';
+  const agree = miss.terms ? 'погодьтесь з умовами' : '';
+  return `Щоб зберегти анкету, ${[fill, agree].filter(Boolean).join(' та ')}.`;
+};
+
+// Набране кандидаткою, що лягає в нову анкету: без порожнього й службового.
+const cleanCandidateDraft = draft => Object.fromEntries(Object.entries(draft || {})
+  .filter(([name, value]) => !CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name)
+    && !name.startsWith('__')
+    && String(getCurrentValue(value) ?? '').trim() !== ''));
+
+// Кандидатка з посилання вже заповнила анкету, а вхід відкрив наявний
+// акаунт: набране не губимо, але й наявного не переписуємо — лише порожні
+// поля анкети стають незбереженими правками, і «Мій профіль» дописує їх на
+// відкритті (`utils/myProfilePendingEdits`).
+const rememberCandidateDraftForExistingAccount = (uid, existing, draft) => {
+  const base = existing || {};
+  Object.entries(cleanCandidateDraft(draft)).forEach(([name, value]) => {
+    if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;
+    rememberPendingProfileEdit(uid, name, value, { searchId: isSearchIdIndexedField(name) });
+  });
+};
+
+const seedCandidateDraftRole = draft => {
+  const currentRole = String(draft?.userRole || draft?.role || '').trim().toLowerCase();
+  if (CANDIDATE_ANKETA_ROLES.includes(currentRole)) return draft;
+  const urlRole = readCandidateRoleFromSearch(typeof window === 'undefined' ? '' : window.location.search);
+  if (!urlRole) return draft;
+  const seeded = { ...draft, userRole: urlRole, role: urlRole };
+  try {
+    const { password: _password, ...stored } = seeded;
+    localStorage.setItem(MY_PROFILE_DRAFT_STORAGE_KEY, JSON.stringify(stored));
+  } catch (error) {
+    // Без сховища роль однаково стоїть у стані сторінки.
+  }
+  return seeded;
+};
+
 const buildMyProfileDraft = profileState => {
   const { password: _password, userId: _userId, publish: _publish, ...draftState } = profileState || {};
   return draftState;
@@ -1689,14 +1848,17 @@ const PendingEditsNotice = styled.div`
   background: var(--km-fill, rgba(0, 0, 0, 0.05));
 `;
 
-export const MyProfile = () => {
+export const MyProfile = ({ candidate = false } = {}) => {
   // «Мій профіль» — той самий набір полів, що й картка в матчингу, тож і мова
   // в нього та сама: підписи, чіпи варіантів, заголовки блоків і тости.
-  const { language } = useAppSettings();
+  const { language: appLanguage } = useAppSettings();
+  // Посилання для кандидаток — лише українською: його надсилають вузькому
+  // колу (донорки й СМ), і перемикач мови там лише плутав би.
+  const language = candidate ? 'uk' : appLanguage;
   const [cachedProfileView] = useState(readCachedMyProfileView);
   const [state, setState] = useState(() => (cachedProfileView
     ? { userRole: 'ed', ...cachedProfileView.loadedProfile, userId: cachedProfileView.uid }
-    : readMyProfileDraft() || {}));
+    : (candidate ? seedCandidateDraftRole(readMyProfileDraft() || {}) : readMyProfileDraft() || {})));
   const navigate = useNavigate();
   const location = useLocation();
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
@@ -1730,6 +1892,11 @@ export const MyProfile = () => {
   const [hasAgreed, setHasAgreed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authHintStep, setAuthHintStep] = useState('');
+  // Реєстрація чи вхід, що вже йде: другий дотик не мусить заводити другий запит.
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  // Кандидатка ввела пошту, що вже має акаунт, але інший пароль — попап
+  // «така анкета вже є» (`candidateExistingDialog`).
+  const [candidateExistingEmail, setCandidateExistingEmail] = useState('');
   // Ролі анкети, основна — остання. Порожньо — анкета ще не прочитана,
   // і роль бере `state.userRole`.
   const [profileRoles, setProfileRoles] = useState(() => cachedProfileView?.roles || []);
@@ -2214,6 +2381,30 @@ export const MyProfile = () => {
   }, [toggleUserRole]);
 
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
+  // Посилання для кандидаток (`/anketa`, `utils/candidateAnketa`): донорка чи
+  // СМ заповнює анкету одразу, без форми входу, а акаунт створює крок
+  // «Зберегти анкету» в кінці — пошта й пароль, і набране їде в анкету тим
+  // самим `handleAuthConfirm`. Поки акаунта немає, нічого не пишеться й не
+  // читається з бази: анкета живе в чернетці пристрою (`myProfileDraft`).
+  // Агенціям, клінікам і батькам посилання не надсилають, тож вибір тут —
+  // лише з двох ролей.
+  const candidateGuest = candidate && !isProfileAccessConfirmed;
+  const candidateRole = candidateGuest && CANDIDATE_ANKETA_ROLES.includes(normalizedRole) ? normalizedRole : '';
+  const chooseCandidateRole = useCallback(role => {
+    if (!CANDIDATE_ANKETA_ROLES.includes(role)) return;
+    setMissing(prev => ({ ...prev, candidateRole: false }));
+    // Чернетку пишемо одразу, а не ефектом після рендера: перша відповідь
+    // Firebase («гостя немає») скидає стан і піднімає його з чернетки
+    // (`resetAuthenticatedProfileState` → `restoreLocalDraft`), і роль з
+    // адреси, обрана до неї, інакше губилась.
+    try {
+      const draft = JSON.parse(localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY) || '{}') || {};
+      localStorage.setItem(MY_PROFILE_DRAFT_STORAGE_KEY, JSON.stringify({ ...draft, userRole: role, role }));
+    } catch (error) {
+      // Без сховища роль однаково лягає в стан сторінки.
+    }
+    void writeProfileRoles([role], role);
+  }, [writeProfileRoles]);
 
   /*
    * Анкета, відкрита лише вподобаним, на кожному відкритті «Мого профілю»
@@ -2448,12 +2639,17 @@ export const MyProfile = () => {
       });
   }, [language, userId]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
-  const navSections = useMemo(() => [
+  const navSections = useMemo(() => (candidateGuest ? [
+    // Вхід (Telegram, Google, пошта з паролем) — угорі, далі розділи анкети; фото й публікація
+    // відкриваються після збереження (акаунта до нього немає).
+    { key: 'auth', title: 'Вхід', fields: ['email', 'password', 'terms'], isVirtual: true },
+    ...visibleSections,
+  ] : [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
     { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
     ...visibleSections,
     { key: 'publish', title: 'Публікація', isVirtual: true },
-  ], [isProfileAccessConfirmed, visibleSections]);
+  ]), [candidateGuest, isProfileAccessConfirmed, visibleSections]);
 
   useEffect(() => {
     let isMounted = true;
@@ -2843,37 +3039,68 @@ export const MyProfile = () => {
     const password = String(currentState.password || '');
     const miss = {};
 
+    // Кандидатці — одне нагадування замість трьох тостів поспіль: що саме
+    // заповнити, щоб анкета збереглась (`candidateAuthReminder`).
+    const notify = candidate ? () => {} : null;
+
     if (!normalizedEmail) {
       miss.email = true;
-      authNotifications.emailRequired();
+      (notify || authNotifications.emailRequired)();
     } else if (!isValidEmail(normalizedEmail)) {
       miss.email = true;
-      authNotifications.invalidEmail();
+      (notify || authNotifications.invalidEmail)();
     }
 
     if (!password.trim()) {
       miss.password = true;
-      authNotifications.passwordRequired();
+      (notify || authNotifications.passwordRequired)();
     }
 
     if (!hasAgreed) {
       miss.terms = true;
-      authNotifications.termsRequired();
+      (notify || authNotifications.termsRequired)();
+    }
+
+    // На посиланні для кандидаток роль — частина реєстрації: від неї залежить,
+    // яку анкету людина заповнюватиме одразу після входу.
+    if (candidate && !candidateRole) {
+      miss.candidateRole = true;
+      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
+      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
     }
 
     setMissing(miss);
 
+    if (candidate && (miss.email || miss.password || miss.terms)) {
+      toast.error(candidateAuthReminder(miss, normalizedEmail), { id: 'candidate-auth-reminder' });
+      scrollToSection('auth', { focus: true });
+    }
+
     if (Object.keys(miss).length) return;
+    if (authSubmitting) return;
+    setAuthSubmitting(true);
 
     try {
       const { todayDays, todayDash } = getCurrentDate();
-      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail).catch(() => []);
       let userCredential;
+      // Із захистом від перебору пошт `fetchSignInMethodsForEmail` мовчить і про
+      // наявні акаунти, тож «акаунт уже є» доводить сама відмова реєстрації
+      // (`email-already-in-use`) — і тоді це вхід, а не помилка.
+      let accountExists = methods.length > 0;
+      if (!accountExists) {
+        try {
+          userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+        } catch (createError) {
+          if (createError?.code !== 'auth/email-already-in-use') throw createError;
+          accountExists = true;
+        }
+      }
       let uploadedInfo;
       let authenticatedProfileLoaded = true;
       const { password: _password, userId: _userId, ...draftProfileData } = stateRef.current;
 
-      if (methods.length > 0) {
+      if (accountExists) {
         userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
         resetAuthenticatedProfileState();
         activeAuthUidRef.current = userCredential.user.uid;
@@ -2882,8 +3109,14 @@ export const MyProfile = () => {
         uploadedInfo = buildAuthSessionPayload({ todayDays, todayDash });
         await persistUserProfile(userCredential.user.uid, uploadedInfo, 'update');
         authenticatedProfileLoaded = await loadAuthenticatedProfile(userCredential.user.uid);
+        // Кандидатка з посилання вже заповнила анкету, а пошта виявилась
+        // наявним акаунтом: набране не губимо, але й наявного не переписуємо —
+        // лише порожні поля анкети стають незбереженими правками, і «Мій
+        // профіль» дописує їх на відкритті (`utils/myProfilePendingEdits`).
+        if (candidate) {
+          rememberCandidateDraftForExistingAccount(userCredential.user.uid, persistedProfileRef.current?.data, draftProfileData);
+        }
       } else {
-        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         // Лист не тримає реєстрацію: відмова надіслати його не мусить
         // лишати новий акаунт без анкети (`utils/emailVerification`).
         requestVerificationEmail(userCredential.user, {
@@ -2911,7 +3144,7 @@ export const MyProfile = () => {
         setUserId(userCredential.user.uid);
       }
       setMissing({});
-      if (methods.length === 0) {
+      if (!accountExists) {
         const nextState = {
           ...stateRef.current,
           ...uploadedInfo,
@@ -2920,10 +3153,24 @@ export const MyProfile = () => {
         stateRef.current = nextState;
         setState(nextState);
       }
+      // Кандидатка з посилання далі заповнює анкету у звичайному «Моєму
+      // профілі» — з меню й навігацією. Перехід — лише після запису анкети:
+      // перемонтований профіль інакше прочитав би порожню картку.
+      if (candidate) {
+        // Чернетка гостя (роль, пошта) вже лягла в анкету; лишати її на
+        // пристрої — означало б підсунути її наступному гостю.
+        localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+        navigate('/my-profile', { replace: true });
+      }
     } catch (error) {
       const errorCode = String(error?.code || '');
 
-      if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
+      if (candidate && (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential')) {
+        // Пошта вже має акаунт, а пароль інший: кажемо прямо, що анкета вже є,
+        // і як до неї потрапити, а не мовчазне «невірний пароль».
+        setMissing(prev => ({ ...prev, password: true }));
+        setCandidateExistingEmail(normalizedEmail);
+      } else if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
         setMissing(prev => ({ ...prev, password: true }));
         authNotifications.wrongPassword();
       } else if (errorCode === 'auth/invalid-email') {
@@ -2936,6 +3183,107 @@ export const MyProfile = () => {
         console.error('auth error', error);
         authNotifications.genericAuthError();
       }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  // Роль і згода — спільна умова будь-якого способу входу кандидатки: без
+  // ролі невідомо, яку анкету заводити, а без згоди реєструвати не можна.
+  const checkCandidateReadyForSignIn = () => {
+    const miss = {};
+    if (!candidateRole) miss.candidateRole = true;
+    if (!hasAgreed) miss.terms = true;
+    if (!Object.keys(miss).length) return true;
+    setMissing(prev => ({ ...prev, ...miss }));
+    if (miss.candidateRole) {
+      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
+      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
+    } else {
+      toast.error('Щоб продовжити, погодьтесь з умовами.', { id: 'candidate-auth-reminder' });
+    }
+    return false;
+  };
+
+  // Вхід кандидатки через Google — вікном, як і у формі входу (`utils/googleAuth`).
+  // Новий акаунт одразу отримує роль і все набране; наявний — вхід, а набране
+  // лягає лише в порожні поля його анкети.
+  const handleCandidateGoogle = async () => {
+    if (authSubmitting || !checkCandidateReadyForSignIn()) return;
+    setAuthSubmitting(true);
+    try {
+      const { todayDays, todayDash } = getCurrentDate();
+      const draft = stateRef.current || {};
+      const credential = await signInWithPopup(auth, createGoogleAuthProvider());
+      const uid = credential.user.uid;
+      const additional = getAdditionalUserInfo(credential);
+      const profileData = buildGoogleProfileData(credential.user, additional?.profile);
+      const isNew = Boolean(additional?.isNewUser) || !(await hasAccountRegistration(uid).catch(() => true));
+      if (isNew) {
+        const uploadedInfo = buildAuthProfilePayload({
+          email: profileData.email || '',
+          userId: uid,
+          userRole: candidateRole,
+          todayDays,
+          todayDash,
+          isRegistration: true,
+          // Набране людиною важить більше за імʼя з Google.
+          extraProfileData: { ...profileData, ...cleanCandidateDraft(draft), role: candidateRole },
+        });
+        await persistUserProfile(uid, uploadedInfo, 'set');
+      } else {
+        const existing = await fetchUserById(uid, { includePhotos: false }).catch(() => null);
+        rememberCandidateDraftForExistingAccount(uid, existing, draft);
+        void persistUserProfile(uid, buildAuthLoginPayload({ email: profileData.email || '', userId: uid, todayDays, todayDash }), 'update', { revisionNeutral: true })
+          .catch(error => console.warn('[candidate] не вдалося записати дату входу', error));
+      }
+      markAuthSession({ email: profileData.email || '', userId: uid });
+      navigate('/my-profile', { replace: true });
+    } catch (error) {
+      if (isGoogleSignInCancelled(error)) return;
+      if (error?.code === 'auth/popup-blocked') {
+        toast.error('Браузер заблокував вікно Google. Дозвольте спливні вікна й спробуйте ще раз');
+      } else if (error?.code === 'auth/account-exists-with-different-credential') {
+        toast.error('Ця пошта вже має акаунт KnowMe. Увійдіть поштою й паролем');
+      } else if (error?.code === 'auth/operation-not-allowed' || error?.code === 'auth/unauthorized-domain') {
+        toast.error('Вхід через Google ще не ввімкнено. Увійдіть іншим способом');
+      } else {
+        console.error('[candidate] вхід через Google не вдався', error);
+        toast.error('Не вдалося увійти через Google. Спробуйте ще раз або оберіть інший спосіб');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  // Telegram — бот у застосунку Telegram, а завершує вхід форма входу: вона
+  // чекає номер, питає код і заводить акаунт з роллю зі спроби. Тож тут —
+  // лише спроба з роллю, позначка «прийшла з анкети» (форма дописує набране в
+  // нову анкету, `markCandidateSignup`) і перехід на форму, що вже чекає.
+  const [candidateTelegramNonce] = useState(() => (candidate && isTelegramLoginAvailable() ? createTelegramLoginNonce() : ''));
+  const handleCandidateTelegram = event => {
+    if (!checkCandidateReadyForSignIn()) {
+      event.preventDefault();
+      return;
+    }
+    saveTelegramLoginAttempt({ nonce: candidateTelegramNonce, startedAt: Date.now(), role: candidateRole });
+    markCandidateSignup(candidateRole);
+    navigate('/login', { state: { returnTo: '/my-profile', candidateRole, termsAccepted: true } });
+  };
+
+  // Лист для зміни пароля з попапу «анкета вже є». Відповідь однакова для
+  // будь-якої пошти — як і у формі входу.
+  const sendCandidatePasswordReset = async () => {
+    const email = candidateExistingEmail;
+    setCandidateExistingEmail('');
+    if (!email) return;
+    try {
+      await requestPasswordResetEmail(email, { auth, language });
+      authNotifications.passwordResetSent(email);
+    } catch (error) {
+      if (error?.code === 'auth/user-not-found') authNotifications.passwordResetSent(email);
+      else if (error?.code === 'auth/too-many-requests') authNotifications.tooManyRequests();
+      else authNotifications.genericAuthError();
     }
   };
 
@@ -3935,7 +4283,11 @@ export const MyProfile = () => {
   };
   // Лише основна роль: дві ролі поруч із назвою витискали статус на два
   // рядки, а «⋮» — за край екрана. Усі ролі людина бачить у «Хто ви».
-  const brandTagline = uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
+  // Кандидатка, що ще не обрала роль, не має її й у шапці: «Донор ооцитів»
+  // за замовчуванням читався б як уже зроблений вибір.
+  const brandTagline = candidateGuest && !candidateRole
+    ? ''
+    : uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
   // Основна роль першою — як у шапці й у порядку анкет нижче.
   const previewRoles = [selectedRole, ...rolesList.filter(role => role !== selectedRole)]
     .filter(role => rolesList.includes(role) && !hiddenRoles.includes(role));
@@ -3973,7 +4325,9 @@ export const MyProfile = () => {
     };
   });
 
-  const publishStatusBadge = (
+  // Кандидатці до реєстрації червоний статус «не увійшли» нічого не дає:
+  // єдиний крок і так перед очима.
+  const publishStatusBadge = candidateGuest ? null : (
     <StatusBadge
       ref={statusBadgeRef}
       aria-controls={sectionAnchorId(isProfileAccessConfirmed ? 'publish' : 'auth')}
@@ -3989,6 +4343,213 @@ export const MyProfile = () => {
         : uiText('Логін не відбувся', language)}
     </StatusBadge>
   );
+
+  // Крок входу гостя: на звичайній анкеті він угорі, а на посиланні для
+  // кандидаток (`candidate`) — у кінці, після самої анкети.
+  const guestAuthCard = !isProfileAccessConfirmed ? (
+  <AuthCard id={sectionAnchorId('auth')} ref={node => { sectionRefs.current.auth = node; }}>
+        <Header>
+          <SectionHeading tabIndex={-1} data-section-heading>{uiText(candidate ? 'Вхід до анкети' : 'Доступ до анкети', language)}</SectionHeading>
+        </Header>
+        <FieldGroup>
+          {/* Кандидатці — одне пояснення, навіщо вхід, і три рівні способи:
+              Telegram, Google, пошта з паролем. Зберегти анкету можна й
+              кнопкою внизу, якщо «Продовжити» тут не натиснули. */}
+          {candidate ? (
+            <Field>
+              <AuthIntro data-testid="candidate-auth-why">
+                Вхід потрібен, щоб потім виправити чи видалити свою анкету. Оберіть зручний спосіб.
+              </AuthIntro>
+              <CandidateMethods>
+                {candidateTelegramNonce ? (
+                  <CandidateMethodButton
+                    as="a"
+                    href={buildTelegramLoginLink(candidateTelegramNonce)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleCandidateTelegram}
+                    data-testid="candidate-telegram"
+                  >
+                    <FaTelegramPlane size={18} color="#229ED9" aria-hidden="true" />
+                    Увійти через Telegram
+                  </CandidateMethodButton>
+                ) : null}
+                <CandidateMethodButton type="button" onClick={handleCandidateGoogle} disabled={authSubmitting} data-testid="candidate-google">
+                  <FcGoogle size={18} aria-hidden="true" />
+                  Увійти через Google
+                </CandidateMethodButton>
+              </CandidateMethods>
+              <CandidateOrEmail>або поштою й паролем</CandidateOrEmail>
+            </Field>
+          ) : (
+          <Field>
+            <AuthIntro>
+              Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
+            </AuthIntro>
+          </Field>
+          )}
+          <AuthField $missing={missing.email}>
+            <HighlightableLabel as="label" htmlFor={fieldControlId('email')} $active={authHintStep === 'email'}>Email</HighlightableLabel>
+            <FieldControl>
+              <Input
+                id={fieldControlId('email')}
+                type="email"
+                name="email"
+                value={state.email || ''}
+                placeholder={uiText('Введіть емейл', language)}
+                autoComplete="email"
+                onChange={e => {
+                  const value = e.target.value;
+                  editedFieldsRef.current.add('email');
+                  setMissing(prev => ({ ...prev, email: false }));
+                  setState(prevState => {
+                    const nextState = { ...prevState, email: value };
+                    stateRef.current = nextState;
+                    return nextState;
+                  });
+                }}
+              />
+              {state.email ? (
+                <ClearFieldButton
+                  type="button"
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => {
+                    editedFieldsRef.current.add('email');
+                    setState(prevState => {
+                      const nextState = { ...prevState, email: '' };
+                      stateRef.current = nextState;
+                      return nextState;
+                    });
+                  }}
+                  aria-label={uiText('Очистити email', language)}
+                >
+                  <FiX size={16} />
+                </ClearFieldButton>
+              ) : null}
+            </FieldControl>
+          </AuthField>
+          <AuthField $missing={missing.password}>
+            <HighlightableLabel as="label" htmlFor={fieldControlId('password')} $active={authHintStep === 'password'}>{uiText('Пароль', language)}</HighlightableLabel>
+            <FieldControl>
+              <Input
+                id={fieldControlId('password')}
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={state.password || ''}
+                placeholder={uiText('Придумайте / введіть пароль', language)}
+                autoComplete="new-password"
+                onChange={e => {
+                  const value = e.target.value;
+                  setMissing(prev => ({ ...prev, password: false }));
+                  setState(prevState => {
+                    const nextState = { ...prevState, password: value };
+                    stateRef.current = nextState;
+                    return nextState;
+                  });
+                }}
+              />
+              <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={uiText(showPassword ? 'Приховати пароль' : 'Показати пароль', language)}>
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </PasswordToggleButton>
+            </FieldControl>
+          </AuthField>
+          <TermsRow $missing={missing.terms} $active={authHintStep === 'terms'}>
+            <TermsCheckbox
+              id="my-profile-terms"
+              type="checkbox"
+              checked={hasAgreed}
+              $missing={missing.terms}
+              $active={authHintStep === 'terms'}
+              onChange={e => {
+                setHasAgreed(e.target.checked);
+                setMissing(prev => ({ ...prev, terms: false }));
+              }}
+            />
+            <TermsText>
+              <label htmlFor="my-profile-terms">{uiText('Я підтверджую згоду з умовами програми. ', language)}</label>
+              <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
+            </TermsText>
+          </TermsRow>
+          {candidate ? (
+            <AuthActionButton type="button" onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="candidate-continue">
+              {authSubmitting ? 'Зачекайте…' : 'Продовжити'}
+            </AuthActionButton>
+          ) : (
+            <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">{uiText('Підтвердити і продовжити', language)}</AuthActionButton>
+          )}
+        </FieldGroup>
+      </AuthCard>
+  ) : null;
+
+  // Вибір ролі на посиланні для кандидаток: дві відповіді замість пʼяти чипів
+  // «Хто ви» і без питання «замінити чи додати» — анкети ще немає.
+  const candidateRoleCard = (
+    <CandidateRoleCard data-testid="candidate-role-card" ref={roleCardRef}>
+      <RoleCardTitle as="h2" id="candidate-role-title">{uiText('Ким ви хочете стати?', language)}</RoleCardTitle>
+      <CandidateRoleHint>{uiText('Від відповіді залежить, які питання покаже анкета.', language)}</CandidateRoleHint>
+      <CandidateRoleGrid role="radiogroup" aria-labelledby="candidate-role-title">
+        {CANDIDATE_ANKETA_ROLES.map(role => (
+          <CandidateRoleOption
+            key={role}
+            type="button"
+            role="radio"
+            aria-checked={candidateRole === role}
+            $active={candidateRole === role}
+            data-testid={`candidate-role-${role}`}
+            data-missing={missing.candidateRole ? 'true' : undefined}
+            onClick={() => chooseCandidateRole(role)}
+          >
+            {candidateRole === role ? <FaCheck size={13} aria-hidden="true" /> : null}
+            {uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role, language)}
+          </CandidateRoleOption>
+        ))}
+      </CandidateRoleGrid>
+    </CandidateRoleCard>
+  );
+
+  // Одна кнопка внизу анкети: створює акаунт (або входить у наявний) і
+  // зберігає все набране. Чого бракує для входу — нагадує сама.
+  const candidateSaveCard = (
+    <CandidateRoleCard as="div" data-testid="candidate-save-card">
+      <AuthActionButton type="button" onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">
+        {authSubmitting ? 'Зачекайте…' : 'Зберегти анкету'}
+      </AuthActionButton>
+    </CandidateRoleCard>
+  );
+
+  const candidateExistingDialog = candidateExistingEmail ? (
+    <CandidateDialogBackdrop onClick={() => setCandidateExistingEmail('')}>
+      <CandidateDialog
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="candidate-existing-title"
+        data-testid="candidate-existing-dialog"
+        onClick={event => event.stopPropagation()}
+        onKeyDown={event => { if (event.key === 'Escape') setCandidateExistingEmail(''); }}
+      >
+        <h2 id="candidate-existing-title">Анкета з цією поштою вже є</h2>
+        <p>
+          З поштою <b>{candidateExistingEmail}</b> уже зареєстровано анкету, але пароль не підійшов.
+          Введіть пароль від неї ще раз — і анкета відкриється. Якщо пароль забули, надішлемо лист, щоб задати новий.
+        </p>
+        <CandidateDialogActions>
+          <AuthActionButton
+            type="button"
+            autoFocus
+            onClick={() => {
+              setCandidateExistingEmail('');
+              document.getElementById(fieldControlId('password'))?.focus();
+            }}
+          >
+            Ввести пароль ще раз
+          </AuthActionButton>
+          <TermsButton type="button" data-testid="candidate-existing-reset" onClick={sendCandidatePasswordReset}>
+            Забули пароль? Надіслати лист
+          </TermsButton>
+        </CandidateDialogActions>
+      </CandidateDialog>
+    </CandidateDialogBackdrop>
+  ) : null;
 
   // Липке редактора програм стає під липкою смугою прогресу, а та — під липким
   // рядком навігації телефона (`--km-top-nav-h`).
@@ -4047,7 +4608,10 @@ export const MyProfile = () => {
       ) : null}
     </HeaderPanel>
 
-    <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
+    {/* Поки кандидатка не зареєструвалась, смуга прогресу й вкладки говорили
+        б про анкету, якої ще немає. Панель лишається змонтованою (її міряє
+        `ResizeObserver`), лише невидимою. */}
+    <StickyProgress ref={stickyProgressRef} $compact={editingProgram} style={candidateGuest && !candidateRole ? { display: 'none' } : undefined}>
       <ProgressWrap>
         <ProgressLabel>
           <span>{uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
@@ -4091,103 +4655,9 @@ export const MyProfile = () => {
       </SectionNavigation>
     </StickyProgress>
 
-    {!isProfileAccessConfirmed && <AuthCard id={sectionAnchorId('auth')} ref={node => { sectionRefs.current.auth = node; }}>
-      <Header>
-        <SectionHeading tabIndex={-1} data-section-heading>{uiText('Доступ до анкети', language)}</SectionHeading>
-      </Header>
-      <FieldGroup>
-        <Field>
-          <AuthIntro>
-            Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
-          </AuthIntro>
-        </Field>
-        <AuthField $missing={missing.email}>
-          <HighlightableLabel as="label" htmlFor={fieldControlId('email')} $active={authHintStep === 'email'}>Email</HighlightableLabel>
-          <FieldControl>
-            <Input
-              id={fieldControlId('email')}
-              type="email"
-              name="email"
-              value={state.email || ''}
-              placeholder={uiText('Введіть емейл', language)}
-              autoComplete="email"
-              onChange={e => {
-                const value = e.target.value;
-                editedFieldsRef.current.add('email');
-                setMissing(prev => ({ ...prev, email: false }));
-                setState(prevState => {
-                  const nextState = { ...prevState, email: value };
-                  stateRef.current = nextState;
-                  return nextState;
-                });
-              }}
-            />
-            {state.email ? (
-              <ClearFieldButton
-                type="button"
-                onMouseDown={event => event.preventDefault()}
-                onClick={() => {
-                  editedFieldsRef.current.add('email');
-                  setState(prevState => {
-                    const nextState = { ...prevState, email: '' };
-                    stateRef.current = nextState;
-                    return nextState;
-                  });
-                }}
-                aria-label={uiText('Очистити email', language)}
-              >
-                <FiX size={16} />
-              </ClearFieldButton>
-            ) : null}
-          </FieldControl>
-        </AuthField>
-        <AuthField $missing={missing.password}>
-          <HighlightableLabel as="label" htmlFor={fieldControlId('password')} $active={authHintStep === 'password'}>{uiText('Пароль', language)}</HighlightableLabel>
-          <FieldControl>
-            <Input
-              id={fieldControlId('password')}
-              type={showPassword ? 'text' : 'password'}
-              name="password"
-              value={state.password || ''}
-              placeholder={uiText('Придумайте / введіть пароль', language)}
-              autoComplete="new-password"
-              onChange={e => {
-                const value = e.target.value;
-                setMissing(prev => ({ ...prev, password: false }));
-                setState(prevState => {
-                  const nextState = { ...prevState, password: value };
-                  stateRef.current = nextState;
-                  return nextState;
-                });
-              }}
-            />
-            <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={uiText(showPassword ? 'Приховати пароль' : 'Показати пароль', language)}>
-              {showPassword ? <FaEyeSlash /> : <FaEye />}
-            </PasswordToggleButton>
-          </FieldControl>
-        </AuthField>
-        <TermsRow $missing={missing.terms} $active={authHintStep === 'terms'}>
-          <TermsCheckbox
-            id="my-profile-terms"
-            type="checkbox"
-            checked={hasAgreed}
-            $missing={missing.terms}
-            $active={authHintStep === 'terms'}
-            onChange={e => {
-              setHasAgreed(e.target.checked);
-              setMissing(prev => ({ ...prev, terms: false }));
-            }}
-          />
-          <TermsText>
-            <label htmlFor="my-profile-terms">{uiText('Я підтверджую згоду з умовами програми. ', language)}</label>
-            <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
-          </TermsText>
-        </TermsRow>
-        <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>{uiText('Підтвердити і продовжити', language)}</AuthActionButton>
-      </FieldGroup>
-    </AuthCard>}
+    {candidate ? null : guestAuthCard}
 
-    <RoleCard $open={rolePickerOpen} data-testid="my-profile-role-card" ref={roleCardRef}>
+    {candidateGuest ? <>{candidateRoleCard}{guestAuthCard}{candidateExistingDialog}</> : <RoleCard $open={rolePickerOpen} data-testid="my-profile-role-card" ref={roleCardRef}>
       <RoleSummary $open={rolePickerOpen}>
         <RoleCardTitle id="my-profile-role-title">{uiText('Хто ви', language)}</RoleCardTitle>
         {rolePickerOpen ? null : (
@@ -4226,9 +4696,9 @@ export const MyProfile = () => {
       </RoleOptions>
       <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
       </> : null}
-    </RoleCard>
+    </RoleCard>}
 
-    <PhotoSection as="section" id={sectionAnchorId('photo')} tabIndex={-1} aria-label={uiText('Фото', language)} ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
+    {candidateGuest ? null : <PhotoSection as="section" id={sectionAnchorId('photo')} tabIndex={-1} aria-label={uiText('Фото', language)} ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
       <Photos
         key={userId}
@@ -4243,10 +4713,10 @@ export const MyProfile = () => {
         compact
         maxPhotos={5}
       />
-    </PhotoSection>
+    </PhotoSection>}
 
 
-    {visibleSections.map(section => {
+    {candidateGuest && !candidateRole ? null : visibleSections.map(section => {
       const SectionCard = !isProfileAccessConfirmed && section.key === firstSectionKey ? FirstContentCard : Card;
       const anketaLabel = section.anketaRole
         ? MY_PROFILE_ROLE_OPTIONS.find(option => option.value === section.anketaRole)?.label || section.anketaRole
@@ -4448,7 +4918,7 @@ export const MyProfile = () => {
         (вигляд — у коментарях до `PublishHead` і `WayCard`). «Очистити»
         питає підтвердження тією самою модалкою (`clearRoleTarget`), що й
         пункт меню «⋮». */}
-    <SubmitWrap id={sectionAnchorId('publish')} ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
+    {candidateGuest ? (candidateRole ? candidateSaveCard : null) : <SubmitWrap id={sectionAnchorId('publish')} ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <SectionHeading tabIndex={-1} data-section-heading>{uiText('Публікація', language)}</SectionHeading>
         <span data-testid="publish-status">
@@ -4673,7 +5143,7 @@ export const MyProfile = () => {
           сторінка перечитується: долиті поля прийшли з сервера. */}
       {isProfileAccessConfirmed ? <TelegramLinkCard auth={auth} language={language} onMerged={handleAccountMerged} /> : null}
       {isProfileAccessConfirmed ? <SignInMethodsCard auth={auth} language={language} onMerged={handleAccountMerged} /> : null}
-    </SubmitWrap>
+    </SubmitWrap>}
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
         не може. Відступ у 76 px стояв під «Публікацією» порожнім місцем. */}
