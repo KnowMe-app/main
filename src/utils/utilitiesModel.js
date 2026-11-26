@@ -197,6 +197,9 @@ export const listCarryFields = (apartment, mk) => {
     }
   });
   fields.push({ path: 'budget', label: 'Бюджет', budget: true });
+  // Оренда — прихід, з якого складається платіж наступного місяця
+  // (`buildPaymentValues`); у розрахунок комуналки вона не йде.
+  fields.push({ path: 'rent', label: 'Оренда', rent: true });
   return fields;
 };
 
@@ -432,4 +435,80 @@ export const buildTenantText = (apartment, month, computed) => {
   }
   lines.push(computed.result >= 0 ? `Переплата: ${formatMoney(computed.result)} ₴` : `Борг: ${formatMoney(-computed.result)} ₴`);
   return lines.join('\n');
+};
+
+// ---------- розрахунок платежу на наступний місяць ----------
+/*
+ * Оренда (прихід) + приблизна комуналка (бюджет цього місяця — депозит, який
+ * орендарка вносить і наступного) − переплата цього місяця (або + борг) =
+ * платіж на IBAN. Текст — шаблон, як у конструкторі документів: числа
+ * підставляються в {{теги}}, слова власниця править сама (26.11, на її прохання).
+ */
+export const DEFAULT_PAYMENT_TEMPLATE = [
+  'Розрахунок платежу:',
+  '+{{оренда}} (оренда)',
+  '+{{комуналка}} (приблизна комуналка)',
+  '{{залишок}} ({{залишок_підпис}})',
+  '= {{платіж}} грн платіж на IBAN.',
+  '',
+  'Призначення і номер рахунку без змін',
+].join('\n');
+
+export const PAYMENT_TEMPLATE_TOKENS = Object.freeze([
+  { token: 'оренда', label: 'оренда' },
+  { token: 'комуналка', label: 'приблизна комуналка (бюджет)' },
+  { token: 'залишок', label: '−переплата або +борг, зі знаком' },
+  { token: 'залишок_підпис', label: '«переплата» чи «борг»' },
+  { token: 'платіж', label: 'сума платежу' },
+  { token: 'місяць', label: 'місяць платежу' },
+  { token: 'дата_платежу', label: 'день платежу, дд.мм' },
+]);
+
+// Як у повідомленні власниці: «21000», «831,54» — без розрядів, кома в копійках.
+export const formatPlain = n => {
+  const value = round2(n);
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace('.', ',');
+};
+
+export const buildPaymentValues = (apartment, month, computed) => {
+  const rentValue = evalUtilityExpr(month?.rent);
+  if (!isNumber(rentValue)) return null;
+  const utilities = computed.budgetSet ? computed.budget : 0;
+  const balance = computed.result;
+  const payment = rentValue + utilities - balance;
+  const zeroBalance = Math.abs(balance) < 0.005;
+  const nextMk = nextMonthKey(month.mk);
+  return {
+    rent: rentValue,
+    utilities,
+    balance,
+    payment,
+    tokens: {
+      оренда: formatPlain(rentValue),
+      комуналка: formatPlain(utilities),
+      // Переплата зменшує платіж (−), борг збільшує (+).
+      залишок: zeroBalance ? '' : `${balance > 0 ? '-' : '+'}${formatPlain(Math.abs(balance))}`,
+      залишок_підпис: zeroBalance ? '' : balance > 0 ? 'переплата' : 'борг',
+      платіж: formatPlain(payment),
+      місяць: MONTHS[monthIndex(nextMk)],
+      дата_платежу: paymentDateLabel(apartment, month.mk),
+    },
+    zeroBalance,
+  };
+};
+
+const TOKEN_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+// Невідомий тег лишається як є — видно, що його написано з помилкою. Рядок із
+// {{залишок}} при нульовому залишку зникає: «-0 (переплата)» не означає нічого.
+export const renderPaymentText = (template, values) => {
+  const source = hasValue(template) ? String(template) : DEFAULT_PAYMENT_TEMPLATE;
+  return source
+    .split('\n')
+    .filter(line => !(values.zeroBalance && /\{\{\s*залишок\s*\}\}/.test(line)))
+    .map(line => line.replace(TOKEN_RE, (whole, name) => (
+      Object.prototype.hasOwnProperty.call(values.tokens, name) ? values.tokens[name] : whole
+    )))
+    .join('\n');
 };

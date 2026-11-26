@@ -213,3 +213,33 @@ describe('utilitiesExport', () => {
     expect(buildExportFileName('кв. 645/1', '2026-11-17')).toBe('Комуналка — кв. 645 1 — 2026-11-17.xlsx');
   });
 });
+
+describe('payment for the next month', () => {
+  const { buildPaymentValues, renderPaymentText, DEFAULT_PAYMENT_TEMPLATE } = require('./utilitiesModel');
+  const apt = { name: 'Кв', payDay: 19 };
+
+  it('rent + budget − overpayment, as in the owner message', () => {
+    const values = buildPaymentValues(apt, { mk: '2026-10', rent: '21000' }, { budgetSet: true, budget: 3500, result: 831.54 });
+    expect(renderPaymentText(null, values)).toBe([
+      'Розрахунок платежу:',
+      '+21000 (оренда)',
+      '+3500 (приблизна комуналка)',
+      '-831,54 (переплата)',
+      '= 23668,46 грн платіж на IBAN.',
+      '',
+      'Призначення і номер рахунку без змін',
+    ].join('\n'));
+    expect(DEFAULT_PAYMENT_TEMPLATE).toContain('{{платіж}}');
+  });
+
+  it('debt adds to the payment, zero balance drops its line, own text stays', () => {
+    const debt = buildPaymentValues(apt, { mk: '2026-10', rent: 21000 }, { budgetSet: true, budget: 3500, result: -200 });
+    expect(renderPaymentText('{{залишок}} ({{залишок_підпис}}) → {{платіж}} до {{дата_платежу}}', debt)).toBe('+200 (борг) → 24700 до 19.11');
+    const zero = buildPaymentValues(apt, { mk: '2026-10', rent: 21000 }, { budgetSet: true, budget: 3500, result: 0 });
+    expect(renderPaymentText('a\n{{залишок}} x\n={{платіж}} {{невідомо}}', zero)).toBe('a\n=24500 {{невідомо}}');
+  });
+
+  it('no rent — no payment', () => {
+    expect(buildPaymentValues(apt, { mk: '2026-10' }, { budgetSet: true, budget: 3500, result: 0 })).toBeNull();
+  });
+});

@@ -21,7 +21,7 @@ import {
  *        "months": [ { "month": "2026-05", "date": "2026-05-22", "closed": true,
  *          "light": { "day": 1288, "night": 647, "tariffDay": 4.32, "tariffNight": 2.16 },
  *          "water": { "reading": 44, "tariff": 63.792 },
- *          "zhek": "1340-571.13", "inet": 250, "budget": 3500, "carry": false,
+ *          "zhek": "1340-571.13", "inet": 250, "budget": 3500, "rent": 21000, "carry": false,
  *          "extras": [ { "label": "Різниця оплати", "amount": "24000-23730.87", "kind": "credit" } ] } ] } ] }
  *    Суми й тарифи можна писати числом або формулою, як у полі екрана.
  *
@@ -70,6 +70,11 @@ const buildMonthFromSimple = (raw, cats, warnings, label) => {
     if (isValidExpr(budget)) month.budget = budget;
     else warnings.push(`${label}: бюджет «${budget}» — не число`);
   }
+  const rent = toExpr(raw.rent);
+  if (rent !== null) {
+    if (isValidExpr(rent)) month.rent = rent;
+    else warnings.push(`${label}: оренда «${rent}» — не число`);
+  }
   cats.forEach(cat => {
     const source = raw[cat.key];
     if (source === undefined || source === null) return;
@@ -107,7 +112,7 @@ const buildMonthFromSimple = (raw, cats, warnings, label) => {
     }
     if (Object.keys(vals).length) month.vals[cat.key] = vals;
   });
-  const known = new Set(['month', 'date', 'closed', 'carry', 'budget', 'extras', ...cats.map(cat => cat.key)]);
+  const known = new Set(['month', 'date', 'closed', 'carry', 'budget', 'rent', 'extras', ...cats.map(cat => cat.key)]);
   Object.keys(raw).filter(key => !known.has(key)).forEach(key => {
     warnings.push(`${label}: поле «${key}» не відповідає жодному блоку квартири — пропущено`);
   });

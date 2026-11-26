@@ -63,6 +63,9 @@ import {
   PasteBlock,
   PasteHead,
   PasteText,
+  PaymentTemplateArea,
+  TokenRow,
+  TokenChip,
   SettingRow,
   SignBtn,
   Status,
@@ -93,6 +96,10 @@ import {
   MONTHS_LOC,
   buildNewApartment,
   buildTenantText,
+  buildPaymentValues,
+  renderPaymentText,
+  DEFAULT_PAYMENT_TEMPLATE,
+  PAYMENT_TEMPLATE_TOKENS,
   capitalize,
   computeMonth,
   evalUtilityExpr,
@@ -211,6 +218,7 @@ const MonthEditor = ({
   onEdit,
   onCommitField,
   onWrite,
+  onWriteApartment,
   onCopy,
   onClose,
   onToggleEdit,
@@ -227,6 +235,7 @@ const MonthEditor = ({
   const empties = carryFields.filter(field => !hasValue(getPath(view, field.path)) && prev && hasValue(getPath(prev, field.path)));
   const missing = listMissing(view, computed);
   const text = buildTenantText(apartment, view, computed);
+  const payment = buildPaymentValues(apartment, view, computed);
   const [dateText, setDateText] = useState(formatDmy(month.date));
   useEffect(() => setDateText(formatDmy(month.date)), [month.date]);
 
@@ -270,7 +279,7 @@ const MonthEditor = ({
         month={month}
         path={field.path}
         label={label}
-        ariaLabel={field.budget ? 'Бюджет — внесла орендарка' : `${field.label}`}
+        ariaLabel={field.budget ? 'Бюджет — внесла орендарка' : field.rent ? 'Прихід за оренду' : `${field.label}`}
         sub={sub}
         readOnly={!editable}
         localEdits={localEdits}
@@ -451,6 +460,14 @@ const MonthEditor = ({
       <Block>
         <BlockHead>
           <Dot />
+          <b>Оренда</b>
+        </BlockHead>
+        {fieldRow(carryFields.find(field => field.rent), 'Прихід за оренду', 'іде в платіж наступного місяця')}
+      </Block>
+
+      <Block>
+        <BlockHead>
+          <Dot />
           <b>Коригування й разові</b>
         </BlockHead>
         {extras.map(extra => {
@@ -532,6 +549,14 @@ const MonthEditor = ({
         <PasteText data-testid="utilities-text">{text}</PasteText>
       </PasteBlock>
 
+      <PaymentBlock
+        apartment={apartment}
+        payment={payment}
+        canEditTemplate={canWrite}
+        onWriteApartment={onWriteApartment}
+        onCopy={onCopy}
+      />
+
       {canWrite && (isOpenMonth ? (
         <Foot>
           <PrimaryBtn
@@ -557,6 +582,106 @@ const MonthEditor = ({
         </Foot>
       ))}
     </EditorCard>
+  );
+};
+
+// ---------- розрахунок платежу (шаблон, як у конструкторі документів) ----------
+/*
+ * Текст шаблону правиться, числа — {{теги}}: у спокої видно готовий текст,
+ * «Змінити текст» відкриває сирий шаблон. Шаблон один на квартиру
+ * (`apartment.payTemplate`; порожній — типовий), тож правка діє на всі місяці.
+ */
+const PaymentBlock = ({ apartment, payment, canEditTemplate, onWriteApartment, onCopy }) => {
+  const stored = apartment?.payTemplate;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const areaRef = useRef(null);
+  const template = hasValue(stored) ? stored : DEFAULT_PAYMENT_TEMPLATE;
+
+  const save = value => {
+    const next = String(value ?? '');
+    const normalized = next.trim() === '' || next === DEFAULT_PAYMENT_TEMPLATE ? null : next;
+    if ((stored ?? null) !== normalized) onWriteApartment({ payTemplate: normalized }, 'Шаблон платежу');
+  };
+
+  const insertToken = token => {
+    const area = areaRef.current;
+    const tag = `{{${token}}}`;
+    if (!area) {
+      setDraft(prev => prev + tag);
+      return;
+    }
+    const start = area.selectionStart ?? draft.length;
+    const end = area.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + tag + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(start + tag.length, start + tag.length);
+    });
+  };
+
+  if (!payment && !editing) {
+    return (
+      <PasteBlock data-testid="utilities-payment">
+        <PasteHead><b>Розрахунок платежу</b></PasteHead>
+        <Hint>Впишіть прихід за оренду — тут зʼявиться платіж на наступний місяць: оренда + приблизна комуналка − переплата.</Hint>
+      </PasteBlock>
+    );
+  }
+
+  const text = payment ? renderPaymentText(template, payment) : '';
+  return (
+    <PasteBlock data-testid="utilities-payment">
+      <PasteHead>
+        <b>Розрахунок платежу</b>
+        {!editing && (
+          <span style={{ display: 'flex', gap: 6 }}>
+            {canEditTemplate && (
+              <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => { setDraft(template); setEditing(true); }} data-testid="utilities-payment-edit">
+                Змінити текст
+              </GhostBtn>
+            )}
+            <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => onCopy(text)} data-testid="utilities-payment-copy">Скопіювати</GhostBtn>
+          </span>
+        )}
+      </PasteHead>
+      {editing ? (
+        <>
+          <PaymentTemplateArea
+            ref={areaRef}
+            value={draft}
+            rows={Math.max(6, draft.split('\n').length + 1)}
+            aria-label="Шаблон розрахунку платежу"
+            data-testid="utilities-payment-template"
+            onChange={e => setDraft(e.target.value)}
+          />
+          <Hint>Числа підставляються замість тегів. Торкніться тегу — він стане туди, де курсор.</Hint>
+          <TokenRow>
+            {PAYMENT_TEMPLATE_TOKENS.map(item => (
+              <TokenChip
+                key={item.token}
+                type="button"
+                title={item.label}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => insertToken(item.token)}
+              >
+                {`{{${item.token}}}`}
+              </TokenChip>
+            ))}
+          </TokenRow>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <PrimaryBtn type="button" onClick={() => { save(draft); setEditing(false); }} data-testid="utilities-payment-save">Зберегти</PrimaryBtn>
+            <GhostBtn type="button" onClick={() => setEditing(false)}>Скасувати</GhostBtn>
+            {hasValue(stored) && (
+              <GhostBtn type="button" onClick={() => setDraft(DEFAULT_PAYMENT_TEMPLATE)}>Типовий текст</GhostBtn>
+            )}
+          </div>
+        </>
+      ) : (
+        <PasteText data-testid="utilities-payment-text">{text}</PasteText>
+      )}
+    </PasteBlock>
   );
 };
 
@@ -1355,6 +1480,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
             onEdit={handleEdit}
             onCommitField={commitField}
             onWrite={writeMonth}
+            onWriteApartment={writeApartment}
             onCopy={copyText}
             onClose={closeMonth}
             canWrite={canWrite}
@@ -1400,6 +1526,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
                     onEdit={handleEdit}
                     onCommitField={commitField}
                     onWrite={writeMonth}
+                    onWriteApartment={writeApartment}
                     onCopy={copyText}
                     onToggleEdit={m => setEditingMk(editingMk === m.mk ? '' : m.mk)}
                     onDelete={m => setConfirmDeleteMk(m.mk)}

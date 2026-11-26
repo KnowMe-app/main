@@ -370,6 +370,39 @@ export const PasteText = styled.pre`
   user-select: all;
 `;
 
+export const PaymentTemplateArea = styled.textarea`
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--km-card, #fff);
+  color: var(--km-text, #1c1b1a);
+  border: 1px solid var(--km-accent, #c9600f);
+  border-radius: 10px;
+  padding: 10px 12px;
+  resize: vertical;
+`;
+
+export const TokenRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+`;
+
+export const TokenChip = styled.button`
+  border: 0;
+  border-radius: 999px;
+  background: var(--km-fill, #efeae3);
+  color: var(--km-text, #1c1b1a);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  min-height: 32px;
+  cursor: pointer;
+`;
+
 export const Foot = styled.div`
   display: flex;
   flex-wrap: wrap;

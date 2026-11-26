@@ -79,6 +79,29 @@ describe('UtilitiesPage', () => {
     expect(screen.getByTestId('utilities-open-month').textContent).toContain('Новий місяць — листопад');
   });
 
+  it('оренда дає розрахунок платежу, а текст шаблону править власниця', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    const october = await screen.findByTestId('utilities-month-2026-10');
+    expect(within(october).getByTestId('utilities-payment').textContent).toContain('Впишіть прихід за оренду');
+    fireEvent.click(within(october).getByTestId('utilities-edit-month'));
+    const rent = within(october).getByTestId('utilities-field-rent');
+    fireEvent.change(rent, { target: { value: '21000' } });
+    const text = within(october).getByTestId('utilities-payment-text').textContent;
+    expect(text).toContain('+21000 (оренда)');
+    expect(text).toContain('+3500 (приблизна комуналка)');
+    expect(text).toMatch(/= \d+(,\d\d)? грн платіж на IBAN\./);
+    fireEvent.blur(rent);
+    expect(mockEnqueue).toHaveBeenCalled();
+    expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/months/a1/2026-10/rent') && value === '21000')).toBe(true);
+
+    fireEvent.click(within(october).getByTestId('utilities-payment-edit'));
+    fireEvent.change(within(october).getByTestId('utilities-payment-template'), { target: { value: 'До сплати {{платіж}}' } });
+    fireEvent.click(within(october).getByTestId('utilities-payment-save'));
+    expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/apartments/a1/payTemplate') && value === 'До сплати {{платіж}}')).toBe(true);
+  });
+
   it('переносить незмінне з минулого місяця одним тапом і пише через чергу', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
