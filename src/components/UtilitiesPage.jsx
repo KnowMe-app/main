@@ -125,6 +125,7 @@ import {
   listSuggestions,
   monthIndex,
   monthName,
+  nextMonthKey,
   parseDmy,
   paymentDateLabel,
   prevReading,
@@ -528,7 +529,7 @@ const MonthEditor = ({
         defaultTemplate={DEFAULT_PAYMENT_TEMPLATE}
         tokens={PAYMENT_TEMPLATE_TOKENS}
         render={payment ? template => renderPaymentText(template, payment) : null}
-        emptyHint="Впишіть прихід за оренду — тут зʼявиться платіж на наступний місяць: оренда + приблизна комуналка − переплата (або + борг)."
+        emptyHint="Впишіть прихід за оренду — тут зʼявиться платіж на наступний місяць: оренда + приблизна комуналка − переплата (або + борг) попереднього місяця."
         apartment={apartment}
         canEditTemplate={canWrite}
         onWriteApartment={onWriteApartment}
@@ -1376,7 +1377,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
             <SummaryKicker>{apartment.name} · останній закритий місяць — {monthName(lastDone.mk)}</SummaryKicker>
             <SummaryBig $negative={lastComputed.result < 0}>{formatSigned(lastComputed.result)} ₴</SummaryBig>
             <div style={{ fontSize: 14 }}>
-              {lastComputed.result >= 0 ? 'Переплата — зменшує' : 'Борг — збільшує'} платіж {paymentDateLabel(apartment, lastDone.mk)}
+              {lastComputed.result >= 0 ? 'Переплата — зменшує' : 'Борг — збільшує'} платіж {paymentDateLabel(apartment, nextMonthKey(lastDone.mk))}
             </div>
             <Trio>
               <div><span>Бюджет</span><b>{formatMoney(lastComputed.available)}</b></div>

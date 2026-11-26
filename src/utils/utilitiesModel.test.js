@@ -244,7 +244,7 @@ describe('payment for the next month', () => {
   const apt = { name: 'Кв', payDay: 19 };
 
   it('rent + budget − overpayment, as in the owner message', () => {
-    const values = buildPaymentValues(apt, { mk: '2026-10', rent: '21000' }, { budgetSet: true, budget: 3500, result: 831.54 });
+    const values = buildPaymentValues(apt, { mk: '2026-10', rent: '21000' }, { budgetSet: true, budget: 3500, result: 12, prevMonth: { mk: '2026-09' }, prevResult: 831.54 });
     expect(renderPaymentText(null, values)).toBe([
       'Розрахунок платежу:',
       '+21000 (оренда)',
@@ -258,10 +258,22 @@ describe('payment for the next month', () => {
   });
 
   it('debt adds to the payment, zero balance drops its line, own text stays', () => {
-    const debt = buildPaymentValues(apt, { mk: '2026-10', rent: 21000 }, { budgetSet: true, budget: 3500, result: -200 });
+    const debt = buildPaymentValues(apt, { mk: '2026-10', rent: 21000 }, { budgetSet: true, budget: 3500, result: 5, prevMonth: { mk: '2026-09' }, prevResult: -200 });
     expect(renderPaymentText('{{залишок}} ({{залишок_підпис}}) → {{платіж}} до {{дата_платежу}}', debt)).toBe('+200 (борг) → 24700 до 19.11');
     const zero = buildPaymentValues(apt, { mk: '2026-10', rent: 21000 }, { budgetSet: true, budget: 3500, result: 0 });
     expect(renderPaymentText('a\n{{залишок}} x\n={{платіж}} {{невідомо}}', zero)).toBe('a\n=24500 {{невідомо}}');
+  });
+
+  it('залишок береться з попереднього місяця, а не з поточного', () => {
+    const data = buildData();
+    const open = { ...resolveOpenMonth(data, 'a645', { today: '2026-11-20' }), rent: '21000', budget: '3500' };
+    const values = buildPaymentValues(data.apartments.a645, open, computeMonth(data, open));
+    // Листопад ще без показників, а в платежі — переплата жовтня.
+    expect(values.balance).toBeCloseTo(397.3, 2);
+    expect(renderPaymentText('{{залишок}} ({{залишок_підпис}} за {{залишок_місяць}})', values)).toBe('-397,30 (переплата за жовтня)');
+    // Перший місяць квартири залишку не має.
+    const first = buildPaymentValues(data.apartments.a645, { mk: '2026-09', rent: 1 }, { budgetSet: false, result: 50 });
+    expect(first.balance).toBe(0);
   });
 
   it('no rent — no payment', () => {
