@@ -72,6 +72,12 @@ const checkTarget = async (proposal, { current, actorUid } = {}) => {
       && INDEXABLE_DRAFT_STATUSES.has(target.__profileMutationStatus)
     ) {
       if (canUseLegacyDraftTarget(current)) return;
+      // Сторонній читач бачить картку чернетки, а не запис: повного запису
+      // йому не прочитати, тож ID пропозиції приходить разом із карткою.
+      if (target.__profileMutationProposalId) {
+        if (target.__profileMutationProposalId === proposal.targetCreateProposalId) return;
+        throw adapterError('TARGET_NOT_FOUND');
+      }
       const createdBy = target.__profileMutationCreatedBy;
       const parent = createdBy && await createProfileProposalAdapter.get({ cardId, createdBy });
       if (parent?.proposal.id === proposal.targetCreateProposalId) return;

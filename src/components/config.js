@@ -55,6 +55,8 @@ import {
   collectDraftProfilesForIndexing,
   getProfileMutationOwnerPath,
 } from '../utils/profileDraftIndexing';
+import { getProfileDraftCardPath, profileDraftCardToMutation } from '../utils/profileDraftCard';
+import { usesUnifiedProposalStorage } from '../utils/profileProposalStoragePaths';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   SEARCH_ID_ROOT,
@@ -3853,6 +3855,8 @@ const expandProfileDraft = (cardId, mutation, viewerId) => {
     __profileMutationStatus: mutation.status,
     __profileMutationCreatedBy: mutation.createdBy,
     __profileMutationRevision: Number(mutation.revision) || 0,
+    ...(mutation.proposalId ? { __profileMutationProposalId: mutation.proposalId } : {}),
+    ...(mutation.projectionOnly ? { __profileDraftProjectionOnly: true } : {}),
   };
 };
 
@@ -3920,9 +3924,32 @@ const showProfileDraftHit = async (cardId, mutation, viewerId) => {
   return draft;
 };
 
+/**
+ * Чужа чернетка для стороннього читача — її картка, а не запис.
+ *
+ * Повний запис чернетки (з контактами) читають автор, адміни й інспектор.
+ * Решта бачить картку (`utils/profileDraftCard`): ту саму проєкцію, що й у
+ * рядка стрічки, за будь-якого стану чернетки — і на розгляді, і повернутої
+ * автору. Система не чекає адміна: знайдене видно одразу, але обмежено.
+ */
+const readProfileDraftCardAt = async (cardId, viewerId) => {
+  if (!usesUnifiedProposalStorage) return null;
+  try {
+    const snapshot = await get(ref2(database, getProfileDraftCardPath(cardId)));
+    if (auth.currentUser?.uid !== viewerId) return null;
+    return profileDraftCardToMutation(cardId, snapshot.val());
+  } catch (error) {
+    if (!isSearchIdPermissionDenied(error)) {
+      console.warn('[config] картку чернетки не прочитано', { cardId, error });
+    }
+    return null;
+  }
+};
+
 const findProfileDraft = async (cardId, viewerId) => {
   const own = await readProfileDraftAt(viewerId, cardId, viewerId);
   if (own) return own;
+  if (usesUnifiedProposalStorage && !isAdminUid(viewerId)) return readProfileDraftCardAt(cardId, viewerId);
 
   const ownerId = await readProfileDraftOwnerId(cardId);
   if (ownerId && ownerId !== viewerId) {
@@ -3945,7 +3972,10 @@ export const fetchProfileDraftMutationById = async (cardId, { creatorUid = '' } 
   const viewerId = auth.currentUser?.uid;
   if (!id || !viewerId) return null;
   const creator = String(creatorUid || '').trim();
-  const mutation = creator ? await readProfileDraftAt(creator, id, viewerId) : await findProfileDraft(id, viewerId);
+  const mutation = creator
+    ? (await readProfileDraftAt(creator, id, viewerId)
+      || (creator !== viewerId && !isAdminUid(viewerId) ? await readProfileDraftCardAt(id, viewerId) : null))
+    : await findProfileDraft(id, viewerId);
   if (auth.currentUser?.uid !== viewerId || !mutation) return null;
   if (!isAdminUid(viewerId) && mutation.createdBy !== viewerId && !hasFilledProfileDraftData(mutation.data)) return null;
   return mutation;
@@ -6575,7 +6605,9 @@ const readPhotosFromProfileNode = async userId => {
     const snapshot = await get(ref2(database, `${PROFILE_NODES.profileDetails}/${userId}/photos`));
     return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
   } catch (error) {
-    console.error('Error loading user photos from profileDetails:', error);
+    // Відмова правил — звичайна відповідь для чернетки й схованої анкети:
+    // `profileDetails` під ними закритий, фото там немає й бути не може.
+    if (!isSearchIdPermissionDenied(error)) console.error('Error loading user photos from profileDetails:', error);
     return null;
   }
 };

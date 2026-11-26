@@ -417,8 +417,11 @@ describe('створення картки з набраного у стрічц�
     mockLocationState = { createFromQuery: '380501112233', queryMatchedCards: 2 };
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
-    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalled());
-    expect(profileProposalService.createDraft.mock.calls[0][0].data).toEqual({ userId: 'new-card' });
+    // Порожня форма в базу не пишеться: інакше кожне покинуте «Створити»
+    // ставало в черзі адміна порожньою «Новою анкетою».
+    expect(await screen.findByTestId('proposal-editor-kind')).toHaveTextContent('Нова анкета');
+    expect(screen.queryByDisplayValue('380501112233')).not.toBeInTheDocument();
+    expect(profileProposalService.createDraft).not.toHaveBeenCalled();
   });
 
   it('підставляє контакт, коли пошук нічого не знайшов', async () => {
