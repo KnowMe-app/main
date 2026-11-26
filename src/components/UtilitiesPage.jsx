@@ -63,6 +63,9 @@ import {
   PasteBlock,
   PasteHead,
   PasteText,
+  PaymentTemplateArea,
+  TokenRow,
+  TokenChip,
   SettingRow,
   SignBtn,
   Status,
@@ -90,9 +93,17 @@ import {
   CATEGORY_TYPES,
   MONTHS,
   MONTHS_GEN,
-  MONTHS_LOC,
   buildNewApartment,
   buildTenantText,
+  buildPaymentValues,
+  renderPaymentText,
+  DEFAULT_TENANT_TEMPLATE,
+  listTenantTemplateTokens,
+  listHistoryMonths,
+  findLastCompleteMonth,
+  buildVirtualMonth,
+  DEFAULT_PAYMENT_TEMPLATE,
+  PAYMENT_TEMPLATE_TOKENS,
   capitalize,
   computeMonth,
   evalUtilityExpr,
@@ -110,7 +121,6 @@ import {
   listApartments,
   listCarryFields,
   listCategories,
-  listClosedMonths,
   listExtras,
   listMissing,
   listSuggestions,
@@ -121,6 +131,7 @@ import {
   paymentDateLabel,
   prevReading,
   resolveOpenMonth,
+  isMonthComplete,
   setPath,
   todayIso,
   zonesOf,
@@ -211,8 +222,9 @@ const MonthEditor = ({
   onEdit,
   onCommitField,
   onWrite,
+  onWriteApartment,
   onCopy,
-  onClose,
+  onStartNext,
   onToggleEdit,
   onDelete,
   confirmingDelete,
@@ -226,7 +238,7 @@ const MonthEditor = ({
   const carryFields = listCarryFields(apartment, month.mk);
   const empties = carryFields.filter(field => !hasValue(getPath(view, field.path)) && prev && hasValue(getPath(prev, field.path)));
   const missing = listMissing(view, computed);
-  const text = buildTenantText(apartment, view, computed);
+  const payment = buildPaymentValues(apartment, view, computed);
   const [dateText, setDateText] = useState(formatDmy(month.date));
   useEffect(() => setDateText(formatDmy(month.date)), [month.date]);
 
@@ -270,7 +282,7 @@ const MonthEditor = ({
         month={month}
         path={field.path}
         label={label}
-        ariaLabel={field.budget ? 'Бюджет — внесла орендарка' : `${field.label}`}
+        ariaLabel={field.budget ? 'Бюджет — внесла орендарка' : field.rent ? 'Прихід за оренду' : `${field.label}`}
         sub={sub}
         readOnly={!editable}
         localEdits={localEdits}
@@ -347,15 +359,12 @@ const MonthEditor = ({
   };
 
   const extras = listExtras(view);
-  const isReopened = isOpenMonth && !month.virtual && Boolean(month.reopenedAt);
 
   return (
     <EditorCard data-testid={isOpenMonth ? 'utilities-open-month' : `utilities-month-${month.mk}`}>
       {isOpenMonth && (
         <EditorHead>
-          {/* Місяць, який правка повернула в роботу, — не новий: за ним уже
-              є закриті. */}
-          <h2>{isReopened ? 'Повернуто в роботу' : 'Новий місяць'} — {MONTHS[monthIndex(month.mk)]}</h2>
+          <h2>{capitalize(MONTHS[monthIndex(month.mk)])} {String(month.mk).slice(0, 4)}</h2>
           <span>платіж {paymentDateLabel(apartment, month.mk)}</span>
         </EditorHead>
       )}
@@ -416,36 +425,14 @@ const MonthEditor = ({
           <span>{computed.carried ? `${formatMoney(computed.available)} ₴` : ''}</span>
         </BlockHead>
         {fieldRow(carryFields.find(field => field.budget), 'Внесла орендарка', 'депозит за місяць')}
-        {prev && (
-          <div style={{ paddingTop: 6 }}>
-            <div style={{ marginBottom: 6, fontSize: 14 }}>
-              {computed.prevResult >= 0 ? 'Переплата' : 'Борг'} з {MONTHS_GEN[monthIndex(prev.mk)]}:{' '}
-              <Amount $tone={computed.prevResult >= 0 ? 'pos' : 'neg'}><b>{formatSigned(computed.prevResult)} ₴</b></Amount>
-            </div>
-            <Segmented $count={2} role="group" aria-label="Що робити з залишком минулого місяця">
-              <SegmentBtn
-                type="button"
-                $selected={view.carry === true}
-                disabled={!editable}
-                aria-pressed={view.carry === true}
-                data-testid="utilities-carry-balance-yes"
-                onClick={() => onWrite(month, { carry: true }, 'Залишок перенесено')}
-              >
-                Перенести в бюджет
-              </SegmentBtn>
-              <SegmentBtn
-                type="button"
-                $selected={view.carry === false}
-                disabled={!editable}
-                aria-pressed={view.carry === false}
-                data-testid="utilities-carry-balance-no"
-                onClick={() => onWrite(month, { carry: false }, 'Залишок не переносимо')}
-              >
-                {computed.prevResult >= 0 ? 'Не переносити — врахую з платежу' : 'Не переносити — віддасть окремо'}
-              </SegmentBtn>
-            </Segmented>
-          </div>
-        )}
+      </Block>
+
+      <Block>
+        <BlockHead>
+          <Dot />
+          <b>Оренда</b>
+        </BlockHead>
+        {fieldRow(carryFields.find(field => field.rent), 'Прихід за оренду', 'іде в платіж наступного місяця')}
       </Block>
 
       <Block>
@@ -521,29 +508,46 @@ const MonthEditor = ({
           <span>{computed.result >= 0 ? 'Переплата' : 'Борг'}</span>
           <Amount $tone={computed.result >= 0 ? 'pos' : 'neg'} data-testid="utilities-result">{formatMoney(Math.abs(computed.result))} ₴</Amount>
         </CalcLine>
-        {isOpenMonth && missing.length > 0 && <Missing>Ще не заповнено: {missing.join(', ')}</Missing>}
+        {missing.length > 0 && <Missing>Ще не заповнено: {missing.join(', ')}</Missing>}
       </CalcBlock>
 
-      <PasteBlock>
-        <PasteHead>
-          <b>Текст для орендаря</b>
-          <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => onCopy(text)} data-testid="utilities-copy">Скопіювати</GhostBtn>
-        </PasteHead>
-        <PasteText data-testid="utilities-text">{text}</PasteText>
-      </PasteBlock>
+      <TemplateTextBlock
+        title="Текст для орендаря"
+        field="tenantTemplate"
+        defaultTemplate={DEFAULT_TENANT_TEMPLATE}
+        tokens={listTenantTemplateTokens(apartment, month.mk)}
+        render={template => buildTenantText(apartment, view, computed, template)}
+        apartment={apartment}
+        canEditTemplate={canWrite}
+        onWriteApartment={onWriteApartment}
+        onCopy={onCopy}
+        testId="utilities-tenant"
+      />
 
+      <TemplateTextBlock
+        title="Розрахунок платежу"
+        field="payTemplate"
+        defaultTemplate={DEFAULT_PAYMENT_TEMPLATE}
+        tokens={PAYMENT_TEMPLATE_TOKENS}
+        render={payment ? template => renderPaymentText(template, payment) : null}
+        emptyHint="Впишіть прихід за оренду — тут зʼявиться платіж на наступний місяць: оренда + приблизна комуналка − переплата (або + борг)."
+        apartment={apartment}
+        canEditTemplate={canWrite}
+        onWriteApartment={onWriteApartment}
+        onCopy={onCopy}
+        testId="utilities-payment"
+      />
+
+      {/* Закривати місяць не треба: заповнений рахується сам, а після дня
+          платежу на його місце стає наступний. Почати його раніше — тут. */}
       {canWrite && (isOpenMonth ? (
-        <Foot>
-          <PrimaryBtn
-            type="button"
-            style={{ flex: 1 }}
-            disabled={missing.length > 0}
-            data-testid="utilities-close-month"
-            onClick={() => onClose(month)}
-          >
-            {missing.length ? `Закрити місяць · бракує ${missing.length}` : `Закрити ${MONTHS[monthIndex(month.mk)]} · ${formatSigned(computed.result)} ₴`}
-          </PrimaryBtn>
-        </Foot>
+        !month.virtual && missing.length === 0 && onStartNext ? (
+          <Foot>
+            <GhostBtn type="button" style={{ flex: 1 }} onClick={() => onStartNext(month)} data-testid="utilities-start-next">
+              + Почати {MONTHS[monthIndex(nextMonthKey(month.mk))]}
+            </GhostBtn>
+          </Foot>
+        ) : null
       ) : confirmingDelete ? (
         <Foot style={{ background: 'var(--km-danger-bg, #fff2f1)' }}>
           <Hint style={{ width: '100%' }}>Видалити {monthName(month.mk)}? Наступний місяць візьме «було» з попереднього.</Hint>
@@ -557,6 +561,118 @@ const MonthEditor = ({
         </Foot>
       ))}
     </EditorCard>
+  );
+};
+
+// ---------- тексти за шаблоном (як у конструкторі документів) ----------
+/*
+ * «Текст для орендаря» й «Розрахунок платежу»: у спокої видно готовий текст,
+ * «Змінити текст» відкриває сирий шаблон з {{тегами}}. Шаблон один на квартиру
+ * (`apartment[field]`, порожній — типовий), тож правка діє на всі її місяці.
+ */
+const TemplateTextBlock = ({
+  title,
+  field,
+  defaultTemplate,
+  tokens,
+  render,
+  emptyHint,
+  apartment,
+  canEditTemplate,
+  onWriteApartment,
+  onCopy,
+  testId,
+}) => {
+  const stored = apartment?.[field];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const areaRef = useRef(null);
+  const template = hasValue(stored) ? stored : defaultTemplate;
+
+  const save = value => {
+    const next = String(value ?? '');
+    const normalized = next.trim() === '' || next === defaultTemplate ? null : next;
+    if ((stored ?? null) !== normalized) onWriteApartment({ [field]: normalized }, `Шаблон: ${title}`);
+  };
+
+  const insertToken = token => {
+    const area = areaRef.current;
+    const tag = `{{${token}}}`;
+    if (!area) {
+      setDraft(prev => prev + tag);
+      return;
+    }
+    const start = area.selectionStart ?? draft.length;
+    const end = area.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + tag + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(start + tag.length, start + tag.length);
+    });
+  };
+
+  const text = render ? render(template) : null;
+  if (text === null && !editing) {
+    return (
+      <PasteBlock data-testid={testId}>
+        <PasteHead><b>{title}</b></PasteHead>
+        <Hint>{emptyHint}</Hint>
+      </PasteBlock>
+    );
+  }
+
+  return (
+    <PasteBlock data-testid={testId}>
+      <PasteHead>
+        <b>{title}</b>
+        {!editing && (
+          <span style={{ display: 'flex', gap: 6 }}>
+            {canEditTemplate && (
+              <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => { setDraft(template); setEditing(true); }} data-testid={`${testId}-edit`}>
+                Змінити текст
+              </GhostBtn>
+            )}
+            <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => onCopy(text)} data-testid={`${testId}-copy`}>Скопіювати</GhostBtn>
+          </span>
+        )}
+      </PasteHead>
+      {editing ? (
+        <>
+          <PaymentTemplateArea
+            ref={areaRef}
+            value={draft}
+            rows={Math.max(6, draft.split('\n').length + 1)}
+            aria-label={`Шаблон: ${title}`}
+            data-testid={`${testId}-template`}
+            onChange={e => setDraft(e.target.value)}
+          />
+          <Hint>Числа підставляються замість тегів. Торкніться тегу — він стане туди, де курсор. Тег з великої літери дає слово з великої.</Hint>
+          <TokenRow>
+            {tokens.map(item => (
+              <TokenChip
+                key={item.token}
+                type="button"
+                title={item.label}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => insertToken(item.token)}
+              >
+                {`{{${item.token}}}`}
+              </TokenChip>
+            ))}
+          </TokenRow>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <PrimaryBtn type="button" onClick={() => { save(draft); setEditing(false); }} data-testid={`${testId}-save`}>Зберегти</PrimaryBtn>
+            <GhostBtn type="button" onClick={() => setEditing(false)}>Скасувати</GhostBtn>
+            {draft !== defaultTemplate && (
+              <GhostBtn type="button" onClick={() => setDraft(defaultTemplate)}>Типовий текст</GhostBtn>
+            )}
+          </div>
+        </>
+      ) : (
+        <PasteText data-testid={`${testId}-text`}>{text}</PasteText>
+      )}
+    </PasteBlock>
   );
 };
 
@@ -851,79 +967,6 @@ const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment,
   );
 };
 
-// ---------- закриті місяці, що стали неповними ----------
-
-/*
- * Правка, після якої закритий місяць неповний, повертає його в роботу. І не
- * лише той місяць, який правили: показник місяця — «було» наступного,
- * початкові показники — «було» першого, видалений місяць посередині міняє
- * «було» наступного. Неповний закритий місяць мовчки рахував би лічильник чи
- * суму нулем, і зсувались би переплати наступних місяців та експорт. Знову
- * закрити такий місяць можна лише повним (`listMissing`).
- */
-const withReopenedIncompleteMonths = (before, patch, ownerId) => {
-  const root = `${utilitiesRootPath(ownerId)}/`;
-  const touched = new Set();
-  Object.keys(patch).forEach(path => {
-    if (!path.startsWith(root)) return;
-    const [section, aptId] = path.slice(root.length).split('/');
-    if ((section === 'months' || section === 'apartments') && aptId) touched.add(aptId);
-  });
-  if (!touched.size) return patch;
-  const after = applyUtilitiesPatch(before, patch, ownerId);
-  const extra = {};
-  const reopened = [];
-  const now = Date.now();
-  touched.forEach(aptId => {
-    const memo = new Map();
-    listClosedMonths(after, aptId).forEach(month => {
-      const missing = listMissing(month, computeMonth(after, month, memo));
-      if (!missing.length) return;
-      const base = `${root}months/${aptId}/${month.mk}`;
-      extra[base] = { closed: false, closedAt: null, reopenedAt: now };
-      reopened.push(`${monthName(month.mk)} (${missing.join(', ')})`);
-    });
-  });
-  if (!reopened.length) return patch;
-  toast(`Повернуто в роботу: ${reopened.join('; ')}`, { duration: 7000 });
-  return mergeIntoPatch(patch, extra);
-};
-
-/*
- * Дописати поля місяця в латку так, щоб у ній не було шляху-предка й
- * нащадка разом: `update` Firebase відкидає такий запис цілком («path …
- * is ancestor of another path»). Імпорт пише місяць цілим обʼєктом
- * (`months/{кв}/{міс}`), і позначки повернення в роботу мусять лягти в
- * сам обʼєкт, а не поруч окремими шляхами.
- */
-const mergeIntoPatch = (patch, monthFields) => {
-  const next = { ...patch };
-  Object.entries(monthFields).forEach(([base, fields]) => {
-    const ancestor = Object.keys(next).find(key => base === key || base.startsWith(`${key}/`));
-    if (ancestor) {
-      const value = next[ancestor];
-      if (!value || typeof value !== 'object') return;
-      const copy = JSON.parse(JSON.stringify(value));
-      const rest = base === ancestor ? [] : base.slice(ancestor.length + 1).split('/');
-      let node = copy;
-      rest.forEach(key => {
-        if (!node[key] || typeof node[key] !== 'object') node[key] = {};
-        node = node[key];
-      });
-      Object.entries(fields).forEach(([field, fieldValue]) => {
-        if (fieldValue === null) delete node[field];
-        else node[field] = fieldValue;
-      });
-      next[ancestor] = copy;
-      return;
-    }
-    Object.entries(fields).forEach(([field, fieldValue]) => {
-      next[`${base}/${field}`] = fieldValue;
-    });
-  });
-  return next;
-};
-
 // ---------- екран ----------
 
 export const UtilitiesManager = ({ ownerId, viewerId }) => {
@@ -1012,7 +1055,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     const before = dataRef.current;
     // Відміна й повтор повертають рівно те, що було; решта правок
     // перевіряє закриті місяці зачеплених квартир.
-    const absolutePatch = record ? withReopenedIncompleteMonths(before, rawPatch, ownerId) : rawPatch;
+    const absolutePatch = rawPatch;
     const inverse = buildInverseUtilitiesPatch(before, absolutePatch, ownerId);
     const next = applyUtilitiesPatch(before, absolutePatch, ownerId);
     dataRef.current = next;
@@ -1037,7 +1080,6 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     // Перший запис у новий місяць заводить його в базі з датою.
     if (month.virtual && !dataRef.current?.months?.[month.aptId]?.[month.mk]) {
       patch[`${base}/date`] = month.date || todayIso();
-      patch[`${base}/closed`] = false;
     }
     Object.entries(relPatch).forEach(([rel, value]) => {
       patch[`${base}/${pathToDb(rel)}`] = value === undefined ? null : value;
@@ -1151,10 +1193,12 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     setSettingsOpen(false);
   };
 
-  const closeMonth = month => {
-    writeMonth(month, { closed: true, closedAt: Date.now(), reopenedAt: null, ...(month.virtual ? { date: month.date } : {}) }, `Закрито ${monthName(month.mk)}`);
+  // Наступний місяць до дня платежу: заводиться в базі з датою показників.
+  const startNextMonth = () => {
+    if (!aptId) return;
+    const next = buildVirtualMonth(dataRef.current, aptId);
+    writeMonth(next, { date: next.date }, `Почато ${monthName(next.mk)}`);
     setOpenHistoryMk('');
-    toast.success(`${capitalize(monthName(month.mk))} закрито`);
   };
 
   const deleteMonth = month => {
@@ -1236,14 +1280,14 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
 
   // ---------- розкладка ----------
 
-  const closed = aptId ? listClosedMonths(data, aptId) : [];
-  const lastClosed = closed[closed.length - 1] || null;
-  const lastComputed = lastClosed ? computeMonth(data, lastClosed) : null;
+  const memo = new Map();
   // Відкритий місяць учасника бачить і той, хто лише читає (інспектор), — але
   // порожній наступний місяць пропонується лише тому, хто пише.
   const resolvedOpen = aptId ? resolveOpenMonth(data, aptId) : null;
   const openMonth = resolvedOpen && (canWrite || !resolvedOpen.virtual) ? resolvedOpen : null;
-  const memo = new Map();
+  const pastMonths = aptId ? listHistoryMonths(data, aptId, openMonth?.mk) : [];
+  const lastDone = aptId ? findLastCompleteMonth(data, aptId, memo) : null;
+  const lastComputed = lastDone ? computeMonth(data, lastDone, memo) : null;
 
   return (
     <Wrap data-testid="utilities-page" ref={wrapRef}>
@@ -1294,8 +1338,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
         {apartments.length > 0 && (
           <AptChips role="group" aria-label="Квартири">
             {apartments.map(apt => {
-              const months = listClosedMonths(data, apt.id);
-              const last = months[months.length - 1];
+              const last = findLastCompleteMonth(data, apt.id, memo);
               const result = last ? computeMonth(data, last, memo).result : null;
               return (
                 <AptChip
@@ -1330,10 +1373,10 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
 
         {lastComputed && (
           <Card aria-live="polite" data-testid="utilities-summary">
-            <SummaryKicker>{apartment.name} · останній закритий місяць — {monthName(lastClosed.mk)}</SummaryKicker>
+            <SummaryKicker>{apartment.name} · останній заповнений місяць — {monthName(lastDone.mk)}</SummaryKicker>
             <SummaryBig $negative={lastComputed.result < 0}>{formatSigned(lastComputed.result)} ₴</SummaryBig>
             <div style={{ fontSize: 14 }}>
-              {lastComputed.result >= 0 ? 'Переплата' : 'Борг'} — у {MONTHS_LOC[monthIndex(nextMonthKey(lastClosed.mk))]} перенести в бюджет або врахувати з платежу {paymentDateLabel(apartment, lastClosed.mk)}
+              {lastComputed.result >= 0 ? 'Переплата — зменшує' : 'Борг — збільшує'} платіж {paymentDateLabel(apartment, lastDone.mk)}
             </div>
             <Trio>
               <div><span>Бюджет</span><b>{formatMoney(lastComputed.available)}</b></div>
@@ -1355,14 +1398,15 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
             onEdit={handleEdit}
             onCommitField={commitField}
             onWrite={writeMonth}
+            onWriteApartment={writeApartment}
             onCopy={copyText}
-            onClose={closeMonth}
+            onStartNext={startNextMonth}
             canWrite={canWrite}
           />
         )}
 
-        {closed.length > 0 && <HistoryTitle>Закриті місяці · {closed.length}</HistoryTitle>}
-        {closed.slice().reverse().map(month => {
+        {pastMonths.length > 0 && <HistoryTitle>Попередні місяці · {pastMonths.length}</HistoryTitle>}
+        {pastMonths.map(month => {
           const computed = computeMonth(data, month, memo);
           const open = openHistoryMk === month.mk;
           const editable = canWrite && editingMk === month.mk;
@@ -1381,7 +1425,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
                 <strong>{capitalize(monthName(month.mk))}</strong>
                 <small>
                   {month.date ? `показники ${formatDmy(month.date)}` : 'дата зняття не вказана'} · платіж {paymentDateLabel(apartment, month.mk)}
-                  {month.carry === true ? ' · залишок перенесено' : ''}
+                  {isMonthComplete(data, month, memo) ? '' : ' · не все заповнено'}
                 </small>
                 <MonthResult $negative={computed.result < 0}>
                   {formatSigned(computed.result)}
@@ -1400,6 +1444,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
                     onEdit={handleEdit}
                     onCommitField={commitField}
                     onWrite={writeMonth}
+                    onWriteApartment={writeApartment}
                     onCopy={copyText}
                     onToggleEdit={m => setEditingMk(editingMk === m.mk ? '' : m.mk)}
                     onDelete={m => setConfirmDeleteMk(m.mk)}

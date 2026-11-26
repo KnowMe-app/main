@@ -72,11 +72,52 @@ describe('UtilitiesPage', () => {
     writeUtilitiesCache('owner-1', JSON.parse(JSON.stringify(DATA)));
   });
 
-  it('показує підсумок закритого місяця й новий місяць', async () => {
+  it('показує підсумок заповненого місяця й наступний — без «Закрити» й без вибору, куди перенести залишок', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(screen.getByTestId('utilities-summary').textContent).toContain('жовтень 2026');
-    expect(screen.getByTestId('utilities-open-month').textContent).toContain('Новий місяць — листопад');
+    expect(screen.getByTestId('utilities-summary').textContent).toContain('Переплата — зменшує платіж 19.11');
+    expect(screen.getByTestId('utilities-open-month').textContent).toContain('Листопад 2026');
+    expect(screen.queryByTestId('utilities-close-month')).toBeNull();
+    expect(screen.queryByTestId('utilities-carry-balance-yes')).toBeNull();
+    expect(screen.queryByTestId('utilities-carry-balance-no')).toBeNull();
+  });
+
+  it('текст для орендаря править власниця: шаблон з тегами на квартиру', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const open = screen.getByTestId('utilities-open-month');
+    expect(within(open).getByTestId('utilities-tenant-text').textContent).toContain('кв. 645 · листопад 2026');
+    fireEvent.click(within(open).getByTestId('utilities-tenant-edit'));
+    const area = within(open).getByTestId('utilities-tenant-template');
+    expect(area.value).toContain('{{нарахування}}');
+    fireEvent.change(area, { target: { value: 'Привіт! Разом {{разом}} ₴' } });
+    fireEvent.click(within(open).getByTestId('utilities-tenant-save'));
+    expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/apartments/a1/tenantTemplate') && value === 'Привіт! Разом {{разом}} ₴')).toBe(true);
+    expect(within(open).getByTestId('utilities-tenant-text').textContent).toBe('Привіт! Разом 0,00 ₴');
+  });
+
+  it('оренда дає розрахунок платежу, а текст шаблону править власниця', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    const october = await screen.findByTestId('utilities-month-2026-10');
+    expect(within(october).getByTestId('utilities-payment').textContent).toContain('Впишіть прихід за оренду');
+    fireEvent.click(within(october).getByTestId('utilities-edit-month'));
+    const rent = within(october).getByTestId('utilities-field-rent');
+    fireEvent.change(rent, { target: { value: '21000' } });
+    const text = within(october).getByTestId('utilities-payment-text').textContent;
+    expect(text).toContain('+21000 (оренда)');
+    expect(text).toContain('+3500 (приблизна комуналка)');
+    expect(text).toMatch(/= \d+(,\d\d)? грн платіж на IBAN\./);
+    fireEvent.blur(rent);
+    expect(mockEnqueue).toHaveBeenCalled();
+    expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/months/a1/2026-10/rent') && value === '21000')).toBe(true);
+
+    fireEvent.click(within(october).getByTestId('utilities-payment-edit'));
+    fireEvent.change(within(october).getByTestId('utilities-payment-template'), { target: { value: 'До сплати {{платіж}}' } });
+    fireEvent.click(within(october).getByTestId('utilities-payment-save'));
+    expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/apartments/a1/payTemplate') && value === 'До сплати {{платіж}}')).toBe(true);
   });
 
   it('переносить незмінне з минулого місяця одним тапом і пише через чергу', async () => {
@@ -90,8 +131,8 @@ describe('UtilitiesPage', () => {
       'multiData/utilities/owner-1/months/a1/2026-11/vals/light/tDay': '4.32',
       'multiData/utilities/owner-1/months/a1/2026-11/vals/zhek/e': '1340-571.13',
       'multiData/utilities/owner-1/months/a1/2026-11/budget': '3500',
-      'multiData/utilities/owner-1/months/a1/2026-11/closed': false,
     });
+    expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-11/closed');
     expect(screen.getAllByText('без змін').length).toBeGreaterThan(0);
   });
 
@@ -107,7 +148,7 @@ describe('UtilitiesPage', () => {
     expect(writes).toEqual(['4.32']);
   });
 
-  it('правка, що робить закритий місяць неповним, повертає його в роботу', async () => {
+  it('правка, що робить останній місяць неповним, повертає його в редактор без жодних позначок у базі', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
@@ -116,14 +157,13 @@ describe('UtilitiesPage', () => {
     fireEvent.change(zhek, { target: { value: '250+' } });
     fireEvent.blur(zhek);
     const patch = mockEnqueue.mock.calls.pop()[1];
-    expect(patch).toMatchObject({
-      'multiData/utilities/owner-1/months/a1/2026-10/vals/zhek/e': '250+',
-      'multiData/utilities/owner-1/months/a1/2026-10/closed': false,
-    });
-    expect(screen.getByTestId('utilities-open-month').textContent).toContain('Повернуто в роботу — жовтень');
+    expect(patch).toEqual({ 'multiData/utilities/owner-1/months/a1/2026-10/vals/zhek/e': '250+' });
+    const open = screen.getByTestId('utilities-open-month');
+    expect(open.textContent).toContain('Жовтень 2026');
+    expect(open.textContent).toContain('Ще не заповнено: ЖЕК');
   });
 
-  it('повна правка закритого місяця лишає його закритим', async () => {
+  it('правка попереднього місяця пише лише саму правку', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
@@ -161,7 +201,7 @@ describe('UtilitiesPage', () => {
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(screen.getByTestId('utilities-open-month')).toBeTruthy();
     expect(screen.getByTestId('utilities-field-vals.zhek.e').readOnly).toBe(true);
-    expect(screen.queryByTestId('utilities-close-month')).toBeNull();
+    expect(screen.queryByTestId('utilities-tenant-edit')).toBeNull();
   });
 
   it('імпорт JSON: файл → підтвердження → один запис у чергу', async () => {
@@ -180,29 +220,7 @@ describe('UtilitiesPage', () => {
     });
   });
 
-  it('правка показника, що ламає наступний закритий місяць, повертає в роботу й наступний', async () => {
-    const data = JSON.parse(JSON.stringify(DATA));
-    data.months.a1['2026-11'] = {
-      ...JSON.parse(JSON.stringify(data.months.a1['2026-10'])),
-      date: '2026-11-30',
-      vals: { ...data.months.a1['2026-10'].vals, water: { cur: '90', t: '63.792' } },
-    };
-    mockFetch.mockResolvedValue(data);
-    writeUtilitiesCache('owner-1', data);
-    renderPage();
-    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
-    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
-    fireEvent.click(screen.getByTestId('utilities-edit-month'));
-    const water = screen.getAllByTestId('utilities-field-vals.water.cur').pop();
-    fireEvent.change(water, { target: { value: '95' } });
-    fireEvent.blur(water);
-    const patch = mockEnqueue.mock.calls.pop()[1];
-    expect(patch['multiData/utilities/owner-1/months/a1/2026-10/vals/water/cur']).toBe('95');
-    expect(patch['multiData/utilities/owner-1/months/a1/2026-11/closed']).toBe(false);
-    expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-10/closed');
-  });
-
-  it('імпорт неповного закритого місяця: позначки в самому обʼєкті, без шляху-предка поруч з нащадком', async () => {
+  it('імпорт місяця — одним обʼєктом, без шляху-предка поруч з нащадком', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('utilities-settings-open'));
@@ -215,8 +233,7 @@ describe('UtilitiesPage', () => {
     const patch = mockEnqueue.mock.calls.pop()[1];
     const keys = Object.keys(patch);
     keys.forEach(key => keys.forEach(other => expect(other.startsWith(`${key}/`)).toBe(false)));
-    expect(patch['multiData/utilities/owner-1/months/a1/2026-11']).toMatchObject({ budget: '3600', closed: false });
-    expect(patch['multiData/utilities/owner-1/months/a1/2026-11'].reopenedAt).toEqual(expect.any(Number));
+    expect(patch['multiData/utilities/owner-1/months/a1/2026-11']).toMatchObject({ budget: '3600' });
   });
 
   it('знаки формули під полем: вставляють у місце курсора й показують результат', async () => {

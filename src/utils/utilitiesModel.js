@@ -197,6 +197,9 @@ export const listCarryFields = (apartment, mk) => {
     }
   });
   fields.push({ path: 'budget', label: 'Бюджет', budget: true });
+  // Оренда — прихід, з якого складається платіж наступного місяця
+  // (`buildPaymentValues`); у розрахунок комуналки вона не йде.
+  fields.push({ path: 'rent', label: 'Оренда', rent: true });
   return fields;
 };
 
@@ -219,7 +222,6 @@ export const listMonths = (data, aptId) => Object.entries(data?.months?.[aptId] 
   .map(([mk, month]) => ({ ...month, mk, aptId }))
   .sort((a, b) => (a.mk < b.mk ? -1 : a.mk > b.mk ? 1 : 0));
 
-export const listClosedMonths = (data, aptId) => listMonths(data, aptId).filter(month => month.closed === true);
 
 export const findPrevMonth = (data, aptId, mk) => {
   const earlier = listMonths(data, aptId).filter(month => month.mk < mk);
@@ -236,17 +238,49 @@ export const defaultReadingDate = (mk, today = todayIso()) => {
   return `${mk}-${String(lastDay).padStart(2, '0')}`;
 };
 
-// Місяць, який зараз заповнюють: відкритий (`closed` не стоїть) або — коли всі
-// закриті — порожній наступний. Порожній існує лише на екрані: у базу він
-// лягає з першим записом.
-export const resolveOpenMonth = (data, aptId, { today = todayIso() } = {}) => {
+// Місяць, який зараз заповнюють (26.11, на прохання власниці продукту:
+// «прибери Закрити місяць, автоматично все рахуй»). Кнопки закриття більше
+// немає: місяць готовий, щойно в ньому заповнено все (`listMissing`). Поточний —
+// останній записаний, поки він неповний або поки не минув його платіж
+// (`paymentDueIso`): рахунок за жовтень копіюють до 19 листопада. Далі — порожній
+// наступний, що існує лише на екрані й лягає в базу з першим записом. Старий
+// прапорець `closed` у базі лишився й нічого не вирішує.
+export const paymentDueIso = (apartment, mk) => {
+  const day = Number(apartment?.payDay) || 19;
+  return `${nextMonthKey(mk)}-${String(day).padStart(2, '0')}`;
+};
+
+export const buildVirtualMonth = (data, aptId, { today = todayIso() } = {}) => {
   const months = listMonths(data, aptId);
-  const open = months.find(month => month.closed !== true);
-  if (open) return { ...open, virtual: false };
   const last = months[months.length - 1];
   const apt = data?.apartments?.[aptId];
   const mk = last ? nextMonthKey(last.mk) : String(apt?.init?.date || today).slice(0, 7);
-  return { aptId, mk, date: defaultReadingDate(mk, today), closed: false, vals: {}, budget: null, carry: last ? null : false, extras: {}, virtual: true };
+  return { aptId, mk, date: defaultReadingDate(mk, today), vals: {}, budget: null, extras: {}, virtual: true };
+};
+
+export const isMonthComplete = (data, month, memo) => listMissing(month, computeMonth(data, month, memo)).length === 0;
+
+export const resolveOpenMonth = (data, aptId, { today = todayIso() } = {}) => {
+  const months = listMonths(data, aptId);
+  const last = months[months.length - 1];
+  if (!last) return buildVirtualMonth(data, aptId, { today });
+  if (!isMonthComplete(data, last)) return { ...last, virtual: false, complete: false };
+  if (today <= paymentDueIso(data?.apartments?.[aptId], last.mk)) return { ...last, virtual: false, complete: true };
+  return buildVirtualMonth(data, aptId, { today });
+};
+
+// Усі записані місяці, крім того, що зараз у редакторі, — від найновішого.
+export const listHistoryMonths = (data, aptId, openMk) => listMonths(data, aptId)
+  .filter(month => month.mk !== openMk)
+  .reverse();
+
+// Останній заповнений місяць — його переплата чи борг іде в найближчий платіж.
+export const findLastCompleteMonth = (data, aptId, memo) => {
+  const months = listMonths(data, aptId);
+  for (let i = months.length - 1; i >= 0; i -= 1) {
+    if (isMonthComplete(data, months[i], memo)) return months[i];
+  }
+  return null;
 };
 
 export const readField = (month, path) => getPath(month, path);
@@ -268,9 +302,10 @@ export const listExtras = month => Object.entries(month?.extras || {})
   .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.id.localeCompare(b.id));
 
 /**
- * Розрахунок місяця. Залишок минулого місяця (переплата чи борг) іде в бюджет
- * лише з явним «перенести» (`carry: true`): у таблиці власниця так само
- * вирішувала — врахувати з платежу чи перенести.
+ * Розрахунок місяця. Переплата чи борг місяця йде в платіж наступного
+ * (`buildPaymentValues`), а не в його бюджет: вибору «перенести в бюджет /
+ * врахувати з платежу» більше немає (26.11, на прохання власниці продукту).
+ * `carry: true` старих місяців ще читається — інакше переписалась би історія.
  */
 export const computeMonth = (data, month, memo = new Map()) => {
   const memoKey = `${month.aptId}|${month.mk}|${month.virtual ? 'v' : ''}`;
@@ -359,9 +394,6 @@ export const listMissing = (month, computed) => {
     if (!isNumber(extra.value)) missing.push(`коригування «${extra.label || 'без назви'}» — сума`);
   });
   if (!computed.budgetSet) missing.push('бюджет');
-  if (computed.prevMonth && month.carry !== true && month.carry !== false) {
-    missing.push(`переплата чи борг ${MONTHS_GEN[monthIndex(computed.prevMonth.mk)]}`);
-  }
   return missing;
 };
 
@@ -407,29 +439,172 @@ export const paymentDateLabel = (apartment, mk) => {
   return `${String(day).padStart(2, '0')}.${nextMonthKey(mk).slice(5, 7)}`;
 };
 
-// Текст для орендаря — той, що копіюється в Telegram.
-export const buildTenantText = (apartment, month, computed) => {
-  const lines = [`${apartment?.name || 'Квартира'} · ${monthName(month.mk)}${month.date ? ` (показники ${formatDm(month.date)})` : ''}`];
-  computed.blocks.forEach(block => {
-    if (block.cat.type === CATEGORY_TYPES.SUM) {
-      lines.push(`${block.cat.name}: ${isNumber(block.value) ? `${formatMoney(block.value)} ₴` : '—'}`);
-      return;
-    }
-    const parts = block.zones.map(row => {
-      const prefix = block.zones.length > 1 ? `${row.zone.label.toLowerCase()} ` : '';
-      if (!row.complete) return `${prefix}—`;
-      return `${prefix}${formatNumber(row.prev.value)}→${formatNumber(row.cur)} = ${formatNumber(row.use)} ${block.cat.unit || ''} × ${formatNumber(row.tariff)} = ${formatMoney(row.sum)} ₴`;
-    });
-    lines.push(`${block.cat.name}: ${parts.join('; ')}`);
-  });
-  lines.push(`Разом комуналка: ${formatMoney(computed.cost)} ₴`);
-  computed.extras.forEach(extra => lines.push(`${extra.label || 'Коригування'}: ${formatSigned(extra.signed)} ₴`));
-  if (computed.carried) {
-    const word = computed.carried >= 0 ? '+ переплата' : '− борг';
-    lines.push(`Бюджет: ${formatMoney(computed.budget)} ₴ ${word} з ${MONTHS_GEN[monthIndex(computed.prevMonth.mk)]} ${formatMoney(Math.abs(computed.carried))} ₴ = ${formatMoney(computed.available)} ₴`);
-  } else {
-    lines.push(`Бюджет: ${formatMoney(computed.budget)} ₴`);
-  }
-  lines.push(computed.result >= 0 ? `Переплата: ${formatMoney(computed.result)} ₴` : `Борг: ${formatMoney(-computed.result)} ₴`);
-  return lines.join('\n');
+// ---------- шаблони текстів (як у конструкторі документів) ----------
+/*
+ * Текст для орендаря й розрахунок платежу — шаблони: числа стоять тегами
+ * {{…}}, слова власниця править сама, шаблон свій у кожної квартири
+ * (`apartment.tenantTemplate`, `apartment.payTemplate`; порожній — типовий).
+ * Тег із великої літери ({{Залишок_підпис}}) дає значення з великої. Рядок, у
+ * якому необовʼязковий тег порожній (нема коригувань, нульовий залишок),
+ * зникає цілком. Невідомий тег лишається як є — видно, що його написано з
+ * помилкою.
+ */
+const TOKEN_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+const tokenKey = name => String(name).trim().toLowerCase();
+
+export const renderTemplateText = (template, defaultTemplate, values) => {
+  const source = hasValue(template) ? String(template) : defaultTemplate;
+  const tokens = values?.tokens || {};
+  const optional = values?.optional || new Set();
+  const lookup = name => {
+    const key = tokenKey(name);
+    return Object.prototype.hasOwnProperty.call(tokens, key) ? String(tokens[key] ?? '') : null;
+  };
+  return source
+    .split('\n')
+    .filter(line => {
+      const names = [...line.matchAll(TOKEN_RE)].map(match => match[1]);
+      return !names.some(name => optional.has(tokenKey(name)) && lookup(name) === '');
+    })
+    .map(line => line.replace(TOKEN_RE, (whole, name) => {
+      const value = lookup(name);
+      if (value === null) return whole;
+      const first = String(name).trim()[0];
+      return first && first !== first.toLowerCase() ? capitalize(value) : value;
+    }))
+    .join('\n');
 };
+
+export const DEFAULT_TENANT_TEMPLATE = [
+  '{{квартира}} · {{місяць}} (показники {{показники}})',
+  '{{нарахування}}',
+  'Разом комуналка: {{разом}} ₴',
+  '{{коригування}}',
+  'Бюджет: {{бюджет}} ₴',
+  '{{Залишок_підпис}}: {{залишок}} ₴',
+].join('\n');
+
+export const listTenantTemplateTokens = (apartment, mk) => [
+  { token: 'квартира', label: 'назва квартири' },
+  { token: 'місяць', label: 'місяць і рік' },
+  { token: 'показники', label: 'дата показників, дд.мм' },
+  { token: 'нарахування', label: 'рядки всіх блоків з розрахунком' },
+  ...listCategories(apartment, mk).map(cat => ({ token: tokenKey(cat.name), label: `сума: ${cat.name}` })),
+  { token: 'разом', label: 'разом комуналка' },
+  { token: 'коригування', label: 'рядки коригувань' },
+  { token: 'бюджет', label: 'бюджет' },
+  { token: 'залишок', label: 'сума переплати чи боргу' },
+  { token: 'залишок_підпис', label: '«переплата» чи «борг»' },
+  { token: 'оренда', label: 'оренда' },
+  { token: 'платіж', label: 'платіж наступного місяця' },
+  { token: 'дата_платежу', label: 'день платежу, дд.мм' },
+];
+
+const blockLine = block => {
+  if (block.cat.type === CATEGORY_TYPES.SUM) {
+    return `${block.cat.name}: ${isNumber(block.value) ? `${formatMoney(block.value)} ₴` : '—'}`;
+  }
+  const parts = block.zones.map(row => {
+    const prefix = block.zones.length > 1 ? `${row.zone.label.toLowerCase()} ` : '';
+    if (!row.complete) return `${prefix}—`;
+    return `${prefix}${formatNumber(row.prev.value)}→${formatNumber(row.cur)} = ${formatNumber(row.use)} ${block.cat.unit || ''} × ${formatNumber(row.tariff)} = ${formatMoney(row.sum)} ₴`;
+  });
+  return `${block.cat.name}: ${parts.join('; ')}`;
+};
+
+export const buildTenantValues = (apartment, month, computed) => {
+  const payment = buildPaymentValues(apartment, month, computed);
+  const tokens = {
+    квартира: apartment?.name || 'Квартира',
+    місяць: monthName(month.mk),
+    показники: month.date ? formatDm(month.date) : '',
+    нарахування: computed.blocks.map(blockLine).join('\n'),
+    разом: formatMoney(computed.cost),
+    коригування: computed.extras.map(extra => `${extra.label || 'Коригування'}: ${formatSigned(extra.signed)} ₴`).join('\n'),
+    бюджет: computed.carried
+      ? `${formatMoney(computed.budget)} ${computed.carried >= 0 ? '+ переплата' : '− борг'} з ${MONTHS_GEN[monthIndex(computed.prevMonth.mk)]} ${formatMoney(Math.abs(computed.carried))} = ${formatMoney(computed.available)}`
+      : formatMoney(computed.budget),
+    залишок: formatMoney(Math.abs(computed.result)),
+    залишок_підпис: computed.result >= 0 ? 'переплата' : 'борг',
+    оренда: payment ? payment.tokens.оренда : '',
+    платіж: payment ? payment.tokens.платіж : '',
+    дата_платежу: paymentDateLabel(apartment, month.mk),
+  };
+  computed.blocks.forEach(block => {
+    const key = tokenKey(block.cat.name);
+    if (!Object.prototype.hasOwnProperty.call(tokens, key)) tokens[key] = block.complete ? formatMoney(block.sum) : '—';
+  });
+  return { tokens, optional: new Set(['коригування', 'показники', 'оренда', 'платіж']) };
+};
+
+// Текст для орендаря — той, що копіюється в Telegram.
+export const buildTenantText = (apartment, month, computed, template = apartment?.tenantTemplate) => (
+  renderTemplateText(template, DEFAULT_TENANT_TEMPLATE, buildTenantValues(apartment, month, computed))
+);
+
+// ---------- розрахунок платежу на наступний місяць ----------
+/*
+ * Оренда (прихід) + приблизна комуналка (бюджет цього місяця — депозит, який
+ * орендарка вносить і наступного) − переплата цього місяця (або + борг) =
+ * платіж на IBAN. Текст — шаблон, як у конструкторі документів: числа
+ * підставляються в {{теги}}, слова власниця править сама (26.11, на її прохання).
+ */
+export const DEFAULT_PAYMENT_TEMPLATE = [
+  'Розрахунок платежу:',
+  '+{{оренда}} (оренда)',
+  '+{{комуналка}} (приблизна комуналка)',
+  '{{залишок}} ({{залишок_підпис}})',
+  '= {{платіж}} грн платіж на IBAN.',
+  '',
+  'Призначення і номер рахунку без змін',
+].join('\n');
+
+export const PAYMENT_TEMPLATE_TOKENS = Object.freeze([
+  { token: 'оренда', label: 'оренда' },
+  { token: 'комуналка', label: 'приблизна комуналка (бюджет)' },
+  { token: 'залишок', label: '−переплата або +борг, зі знаком' },
+  { token: 'залишок_підпис', label: '«переплата» чи «борг»' },
+  { token: 'платіж', label: 'сума платежу' },
+  { token: 'місяць', label: 'місяць платежу' },
+  { token: 'дата_платежу', label: 'день платежу, дд.мм' },
+]);
+
+// Як у повідомленні власниці: «21000», «831,54» — без розрядів, кома в копійках.
+export const formatPlain = n => {
+  const value = round2(n);
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace('.', ',');
+};
+
+export const buildPaymentValues = (apartment, month, computed) => {
+  const rentValue = evalUtilityExpr(month?.rent);
+  if (!isNumber(rentValue)) return null;
+  const utilities = computed.budgetSet ? computed.budget : 0;
+  const balance = computed.result;
+  const payment = rentValue + utilities - balance;
+  const zeroBalance = Math.abs(balance) < 0.005;
+  // Нульовий залишок — порожні теги, і рядок з ними зникає.
+  const nextMk = nextMonthKey(month.mk);
+  return {
+    rent: rentValue,
+    utilities,
+    balance,
+    payment,
+    tokens: {
+      оренда: formatPlain(rentValue),
+      комуналка: formatPlain(utilities),
+      // Переплата зменшує платіж (−), борг збільшує (+).
+      залишок: zeroBalance ? '' : `${balance > 0 ? '-' : '+'}${formatPlain(Math.abs(balance))}`,
+      залишок_підпис: zeroBalance ? '' : balance > 0 ? 'переплата' : 'борг',
+      платіж: formatPlain(payment),
+      місяць: MONTHS[monthIndex(nextMk)],
+      дата_платежу: paymentDateLabel(apartment, month.mk),
+    },
+  };
+};
+
+export const renderPaymentText = (template, values) => renderTemplateText(template, DEFAULT_PAYMENT_TEMPLATE, {
+  tokens: values.tokens,
+  optional: new Set(['залишок', 'залишок_підпис']),
+});
