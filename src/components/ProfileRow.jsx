@@ -80,8 +80,8 @@ import { isFeedDateExplicitlyDenied } from '../utils/matchingSearchResultOrder';
 import { SectionToggle } from './programs/ProgramsView';
 
 // Чернетку з видачі пошуку несе той самий прапорець `create`, що й власну, —
-// тож «бачите лише ви» показуємо лише тоді, коли автор — сам читач (або
-// автора в картці немає: так приходять власні чернетки стрічки).
+// тож «контакти бачите лише ви» показуємо лише тоді, коли автор — сам читач
+// (або автора в картці немає: так приходять власні чернетки стрічки).
 const isViewerOwnDraft = card => {
   if (!isOwnProfileDraftCard(card)) return false;
   const author = String(card?.__profileMutationCreatedBy || '').trim();
@@ -1881,8 +1881,12 @@ const ProfileRow = ({
               <span>{uiText('Акаунт видалено · чекає очищення бази', language)}</span>
             </S.DeletionPendingBadge>
           ) : null}
+          {/* Чернетку бачить кожен, хто увійшов, але лише її картку: автор знає,
+              що контакти лишаються за ним, а сторонній — що це ще не анкета. */}
           {isViewerOwnDraft(user) && !preview ? (
-            <S.DraftBadge data-testid="own-draft-badge">{uiText('Чернетка · бачите лише ви', language)}</S.DraftBadge>
+            <S.DraftBadge data-testid="own-draft-badge">{uiText('Чернетка · контакти бачите лише ви', language)}</S.DraftBadge>
+          ) : isOwnProfileDraftCard(user) && !preview ? (
+            <S.DraftBadge data-testid="foreign-draft-badge">{uiText('Чернетка', language)}</S.DraftBadge>
           ) : null}
           {siblingAnketaRole ? (
             <S.SiblingAnketaNote data-testid="sibling-anketa-note">
@@ -1930,7 +1934,7 @@ const ProfileRow = ({
             {/* Сховану анкету й «лише для вподобаних» отримувач однаково не
                 побачить — кнопка обіцяла б посилання, яке відповідає
                 «недоступна». */}
-            {onShare && !preview && !isLimited && !isViewerOwnDraft(user)
+            {onShare && !preview && !isLimited && !isOwnProfileDraftCard(user)
               && !isFeedDateExplicitlyDenied(user) && user?.[LIKED_AUDIENCE_CARD_FLAG] !== true && (
               <S.RowActionButton
                 type="button"
