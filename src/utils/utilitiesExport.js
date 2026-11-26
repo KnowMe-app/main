@@ -7,6 +7,7 @@ import {
   isNumber,
   listApartments,
   listCategories,
+  listMissing,
   listMonths,
   monthName,
   todayIso,
@@ -49,7 +50,7 @@ export const buildApartmentSheets = (data, aptId) => {
   const memo = new Map();
   const rows = listMonths(data, aptId).map(month => {
     const computed = computeMonth(data, month, memo);
-    const row = [monthName(month.mk), formatDmy(month.date), month.closed === true ? 'закрито' : 'заповнюється'];
+    const row = [monthName(month.mk), formatDmy(month.date), listMissing(month, computed).length ? 'не все заповнено' : 'заповнено'];
     // Колонки — усі блоки квартири, зокрема прибрані й додані пізніше; у
     // місяці, де блок не діяв, його клітинки порожні.
     cats.forEach(cat => {
