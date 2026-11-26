@@ -1520,6 +1520,12 @@ const EN_BY_UK = {
   'Більше анонімності — менше пропозицій. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».':
     'More anonymity means fewer offers. You can return to normal publication at any time with “Publish for everyone”.',
   'Анкета прихована від інших — вас вподобали, тож вам її видно': 'Hidden from others — you were liked, so you can see it',
+  'Ще не збережено': 'Not saved yet',
+  'Зберегти анкету': 'Save your profile',
+  'Щоб анкета збереглась, вкажіть пошту й придумайте пароль — з ними ви повернетесь до анкети й додасте фото. Якщо акаунт із цією поштою вже є, ми просто виконаємо вхід.': 'To save your profile, enter your email and create a password — you will use them to come back to it and add photos. If an account with this email already exists, we will simply sign you in.',
+  'Ким ви хочете стати?': 'What would you like to become?',
+  'Від відповіді залежить, які питання покаже анкета. Реєструватись заздалегідь не треба: анкету ви збережете в кінці.': 'Your answer decides which questions the profile asks. You do not need to register first: you will save the profile at the end.',
+  'Вже є акаунт?': 'Already have an account?',
   'Логін не відбувся': 'Not signed in',
   'Доступ до анкети': 'Access to the profile',
   'Введіть емейл': 'Type your email',

@@ -148,7 +148,7 @@ describe('my-profile publication toggle', () => {
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {
-    expect(source).toContain("uiText('Логін не відбувся', language)");
+    expect(source).toContain("uiText(candidateGuest ? 'Ще не збережено' : 'Логін не відбувся', language)");
   });
 });
 

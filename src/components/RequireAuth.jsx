@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import BrandLoader from './BrandLoader';
@@ -73,6 +73,39 @@ export const RequireAuth = ({ status, allowRemembered = false, children }) => {
         state={{ returnTo: buildReturnToFromLocation(location) }}
       />
     );
+  }
+
+  return children;
+};
+
+/**
+ * Межа посилання для кандидаток (`/anketa`, `utils/candidateAnketa`).
+ *
+ * На відміну від `RequireAuth`, тут гість не йде на форму входу: він
+ * заповнює анкету одразу, а акаунт створює в її кінці. Тому:
+ *   'pending' — чекаємо на Firebase, як і скрізь;
+ *   'out'     — гостьова анкета (`MyProfile` з `candidate`), бази вона не
+ *               питає, поки акаунта немає;
+ *   'in'      — той, хто вже мав акаунт, іде у свій «Мій профіль». Але гість,
+ *               який щойно зберіг анкету тут же, лишається на тій самій
+ *               сторінці: Firebase каже «увійшов» уже на створенні акаунта,
+ *               ще до запису анкети, і перемонтований профіль прочитав би
+ *               порожню картку (та сама пастка, що у формі входу).
+ */
+export const CandidateAnketaGate = ({ status, children }) => {
+  const startedAsGuestRef = useRef(false);
+  if (status === 'out') startedAsGuestRef.current = true;
+
+  if (status === 'pending') {
+    return (
+      <GateWrap role="status" aria-live="polite" data-testid="auth-gate-pending">
+        <LoadingMark />
+      </GateWrap>
+    );
+  }
+
+  if (status === 'in' && !startedAsGuestRef.current) {
+    return <Navigate to="/my-profile" replace />;
   }
 
   return children;
