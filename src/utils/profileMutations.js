@@ -826,7 +826,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   }
   releaseProfileIdentities(cardId, (pendingMutation.identityKeys || []).filter(key => !identityKeys.includes(key))).catch(() => {});
   // Опублікована анкета має власну картку стрічки; картку чернетки знімаємо.
-  removeProfileDraftCard(database, cardId);
+  await removeProfileDraftCard(database, cardId);
   return candidateProfile;
 };
 

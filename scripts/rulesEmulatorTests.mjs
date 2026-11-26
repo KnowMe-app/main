@@ -3107,7 +3107,16 @@ await it('активний шлях відкриває точну чернетк
   await assertFails(get(ref(viewer, livePath)));
   await assertFails(get(ref(viewer, `${liveProposalRoot}/heads/create/${ORDINARY_VIEWER}`)));
   const draftCardPath = `${liveProposalRoot}/cards/${pending.cardId}`;
-  const draftCard = { name: 'Олена', city: 'Київ', role: 'ed', createdBy: ORDINARY_VIEWER, status: 'pendingReview', revision: 1, updatedAt: 1 };
+  const draftCard = {
+    name: 'Олена', city: 'Київ', role: 'ed', createdBy: ORDINARY_VIEWER,
+    status: pending.status, revision: pending.revision, updatedAt: 1,
+    ...(pending.proposalId ? { proposalId: pending.proposalId } : {}),
+  };
+  // Картка привʼязана до запису: інший статус, ревізія чи ID пропозиції —
+  // відмова, щоб картка не обіцяла того, чого в чернетці немає.
+  await assertFails(set(ref(author, draftCardPath), { ...draftCard, status: 'private' }));
+  await assertFails(set(ref(author, draftCardPath), { ...draftCard, revision: Number(pending.revision) + 5 }));
+  await assertFails(set(ref(author, draftCardPath), { ...draftCard, proposalId: 'forged' }));
   await assertFails(set(ref(viewer, draftCardPath), { ...draftCard, createdBy: OUTSIDER }));
   await assertFails(set(ref(viewer, draftCardPath), draftCard));
   await assertFails(set(ref(author, draftCardPath), { ...draftCard, phone: '380509781010' }));
@@ -3121,6 +3130,10 @@ await it('активний шлях відкриває точну чернетк
   await assertSucceeds(set(ref(inspector, ownInspector), { ...pending, cardId: 'cutoverInspector01', createdBy: proposalInspector }));
   await assertSucceeds(update(ref(admin, livePath), { status: 'private', revision: 2 }));
   await assertSucceeds(update(ref(admin, draftCardPath), { status: 'private', revision: 2 }));
+  // Поки під id є готова анкета, картку чернетки не пише навіть автор.
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), `profileDetails/${pending.cardId}`), { name: 'x' }));
+  await assertFails(update(ref(author, draftCardPath), { updatedAt: 2 }));
+  await testEnv.withSecurityRulesDisabled(context => remove(ref(context.database(), `profileDetails/${pending.cardId}`)));
   await assertFails(get(ref(viewer, livePath)));
   await assertFails(get(ref(viewer, ownerPath)));
   // Повернута автору чернетка лишається видимою на рівні картки.
