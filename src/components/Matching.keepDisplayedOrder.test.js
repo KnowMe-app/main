@@ -16,4 +16,9 @@ describe('keepDisplayedOrder — порядок колекції під час �
     const shown = { viewMode: 'favorites', ids: ['a', 'b', 'c'] };
     expect(keepDisplayedOrder(shown, ['c', 'a'], 'favorites')).toEqual(['a', 'c']);
   });
+
+  it('свіжіша реакція, що доїхала після показу, стає нагору, а не в кінець', () => {
+    const shown = { viewMode: 'favorites', ids: ['a', 'b', 'c'] };
+    expect(keepDisplayedOrder(shown, ['new', 'a', 'b', 'c', 'old'], 'favorites')).toEqual(['new', 'a', 'b', 'c', 'old']);
+  });
 });
