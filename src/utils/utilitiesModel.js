@@ -238,18 +238,12 @@ export const defaultReadingDate = (mk, today = todayIso()) => {
   return `${mk}-${String(lastDay).padStart(2, '0')}`;
 };
 
-// Місяць, який зараз заповнюють (26.11, на прохання власниці продукту:
-// «прибери Закрити місяць, автоматично все рахуй»). Кнопки закриття більше
-// немає: місяць готовий, щойно в ньому заповнено все (`listMissing`). Поточний —
-// останній записаний, поки він неповний або поки не минув його платіж
-// (`paymentDueIso`): рахунок за жовтень копіюють до 19 листопада. Далі — порожній
-// наступний, що існує лише на екрані й лягає в базу з першим записом. Старий
-// прапорець `closed` у базі лишився й нічого не вирішує.
-export const paymentDueIso = (apartment, mk) => {
-  const day = Number(apartment?.payDay) || 19;
-  return `${nextMonthKey(mk)}-${String(day).padStart(2, '0')}`;
-};
-
+// Місяць, який зараз заповнюють: перший незакритий (`closed` не стоїть), а коли
+// закриті всі — порожній наступний, що існує лише на екрані й лягає в базу з
+// першим записом. «Закрити місяць» повернуто 26.11 на прохання власниці
+// продукту: закритий іде в «Попередні місяці» (там його можна відкрити й
+// виправити), а новий стартує з порожніми показниками. Вибору «перенести в
+// бюджет» при цьому немає: залишок завжди йде в платіж наступного місяця.
 export const buildVirtualMonth = (data, aptId, { today = todayIso() } = {}) => {
   const months = listMonths(data, aptId);
   const last = months[months.length - 1];
@@ -258,29 +252,25 @@ export const buildVirtualMonth = (data, aptId, { today = todayIso() } = {}) => {
   return { aptId, mk, date: defaultReadingDate(mk, today), vals: {}, budget: null, extras: {}, virtual: true };
 };
 
-export const isMonthComplete = (data, month, memo) => listMissing(month, computeMonth(data, month, memo)).length === 0;
-
 export const resolveOpenMonth = (data, aptId, { today = todayIso() } = {}) => {
-  const months = listMonths(data, aptId);
-  const last = months[months.length - 1];
-  if (!last) return buildVirtualMonth(data, aptId, { today });
-  if (!isMonthComplete(data, last)) return { ...last, virtual: false, complete: false };
-  if (today <= paymentDueIso(data?.apartments?.[aptId], last.mk)) return { ...last, virtual: false, complete: true };
+  const open = listMonths(data, aptId).find(month => month.closed !== true);
+  if (open) return { ...open, virtual: false };
   return buildVirtualMonth(data, aptId, { today });
 };
+
+export const listClosedMonths = (data, aptId) => listMonths(data, aptId).filter(month => month.closed === true);
+
+export const isMonthComplete = (data, month, memo) => listMissing(month, computeMonth(data, month, memo)).length === 0;
 
 // Усі записані місяці, крім того, що зараз у редакторі, — від найновішого.
 export const listHistoryMonths = (data, aptId, openMk) => listMonths(data, aptId)
   .filter(month => month.mk !== openMk)
   .reverse();
 
-// Останній заповнений місяць — його переплата чи борг іде в найближчий платіж.
-export const findLastCompleteMonth = (data, aptId, memo) => {
-  const months = listMonths(data, aptId);
-  for (let i = months.length - 1; i >= 0; i -= 1) {
-    if (isMonthComplete(data, months[i], memo)) return months[i];
-  }
-  return null;
+// Останній закритий місяць — його переплата чи борг іде в найближчий платіж.
+export const findLastClosedMonth = (data, aptId) => {
+  const closed = listClosedMonths(data, aptId);
+  return closed[closed.length - 1] || null;
 };
 
 export const readField = (month, path) => getPath(month, path);

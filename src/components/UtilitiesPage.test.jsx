@@ -72,13 +72,13 @@ describe('UtilitiesPage', () => {
     writeUtilitiesCache('owner-1', JSON.parse(JSON.stringify(DATA)));
   });
 
-  it('показує підсумок заповненого місяця й наступний — без «Закрити» й без вибору, куди перенести залишок', async () => {
+  it('показує підсумок закритого місяця й наступний — із «Закрити», без вибору, куди перенести залишок', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(screen.getByTestId('utilities-summary').textContent).toContain('жовтень 2026');
     expect(screen.getByTestId('utilities-summary').textContent).toContain('Переплата — зменшує платіж 19.11');
     expect(screen.getByTestId('utilities-open-month').textContent).toContain('Листопад 2026');
-    expect(screen.queryByTestId('utilities-close-month')).toBeNull();
+    expect(screen.getByTestId('utilities-close-month').disabled).toBe(true);
     expect(screen.queryByTestId('utilities-carry-balance-yes')).toBeNull();
     expect(screen.queryByTestId('utilities-carry-balance-no')).toBeNull();
   });
@@ -148,7 +148,7 @@ describe('UtilitiesPage', () => {
     expect(writes).toEqual(['4.32']);
   });
 
-  it('правка, що робить останній місяць неповним, повертає його в редактор без жодних позначок у базі', async () => {
+  it('правка закритого місяця пише лише саму правку, а неповний позначено', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
@@ -158,9 +158,8 @@ describe('UtilitiesPage', () => {
     fireEvent.blur(zhek);
     const patch = mockEnqueue.mock.calls.pop()[1];
     expect(patch).toEqual({ 'multiData/utilities/owner-1/months/a1/2026-10/vals/zhek/e': '250+' });
-    const open = screen.getByTestId('utilities-open-month');
-    expect(open.textContent).toContain('Жовтень 2026');
-    expect(open.textContent).toContain('Ще не заповнено: ЖЕК');
+    expect(screen.getByTestId('utilities-history-2026-10').textContent).toContain('не все заповнено');
+    expect(screen.getByTestId('utilities-open-month').textContent).toContain('Листопад 2026');
   });
 
   it('правка попереднього місяця пише лише саму правку', async () => {
@@ -173,6 +172,28 @@ describe('UtilitiesPage', () => {
     fireEvent.blur(zhek);
     const patch = mockEnqueue.mock.calls.pop()[1];
     expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-10/closed');
+  });
+
+  it('«Закрити» кладе місяць у попередні, а новий відкривається з порожніми показниками', async () => {
+    const data = JSON.parse(JSON.stringify(DATA));
+    data.months.a1['2026-11'] = {
+      ...JSON.parse(JSON.stringify(data.months.a1['2026-10'])),
+      closed: false,
+      date: '2026-11-30',
+      vals: { ...data.months.a1['2026-10'].vals, light: { ...data.months.a1['2026-10'].vals.light, day: { cur: '2500' }, night: { cur: '1100' } }, water: { cur: '90', t: '63.792' } },
+    };
+    mockFetch.mockResolvedValue(data);
+    writeUtilitiesCache('owner-1', data);
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const close = screen.getByTestId('utilities-close-month');
+    expect(close.disabled).toBe(false);
+    fireEvent.click(close);
+    expect(mockEnqueue.mock.calls.at(-1)[1]['multiData/utilities/owner-1/months/a1/2026-11/closed']).toBe(true);
+    const open = await screen.findByTestId('utilities-open-month');
+    expect(open.textContent).toContain('Грудень 2026');
+    expect(within(open).getByTestId('utilities-field-vals.light.day.cur').value).toBe('');
+    expect(screen.getByTestId('utilities-history-2026-11')).toBeTruthy();
   });
 
   it('рахує набране одразу, а пише на blur', async () => {
