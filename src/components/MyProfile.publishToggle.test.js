@@ -124,7 +124,7 @@ describe('my-profile publication toggle', () => {
     // Значок статусу один на обидві шапки (рядок навігації телефона й
     // широкий екран), тож зібраний він над `return`.
     expect(header).toContain('{publishStatusBadge}');
-    const badge = source.slice(source.indexOf('const publishStatusBadge = ('));
+    const badge = source.slice(source.indexOf('const publishStatusBadge = candidateGuest ? null : ('));
     expect(badge).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
   });
 
@@ -148,7 +148,7 @@ describe('my-profile publication toggle', () => {
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {
-    expect(source).toContain("uiText(candidateGuest ? 'Ще не збережено' : 'Логін не відбувся', language)");
+    expect(source).toContain("uiText('Логін не відбувся', language)");
   });
 });
 

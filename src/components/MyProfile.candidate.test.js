@@ -1,38 +1,50 @@
 import fs from 'fs';
 import path from 'path';
 
-// Донорки й СМ за посиланням `/anketa` заповнюють анкету без форми входу, а
-// акаунт створюють у кінці. Раніше так працював сам `/my-profile`, доки межа
-// входу (`RequireAuth`) не почала відвозити гостя на `/login`: кандидатка
-// бачила «реєстрацію й паролі» замість анкети й кидала посилання.
-describe('«Мій профіль» як гостьова анкета для кандидаток', () => {
+// Донорки й СМ за посиланням `/anketa` починають анкету з реєстрації прямо в
+// ній: роль (СМ чи донор), пошта й пароль. Раніше так працював сам
+// `/my-profile`, доки межа входу (`RequireAuth`) не почала відвозити гостя на
+// `/login`, і СМ не розуміла, що їй робити.
+describe('«Мій профіль» як посилання для кандидаток', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
+  const confirmBody = source.slice(source.indexOf('const handleAuthConfirm = async () => {'), source.indexOf('const saveState = ('));
 
-  it('вмикається пропом і лише для гостя', () => {
+  it('вмикається пропом, лише для гостя й лише українською', () => {
     expect(source).toContain('export const MyProfile = ({ candidate = false } = {}) => {');
     expect(source).toContain('const candidateGuest = candidate && !isProfileAccessConfirmed;');
+    expect(source).toContain("const language = candidate ? 'uk' : appLanguage;");
   });
 
-  it('питає спершу, ким людина хоче стати, і лише з двох ролей', () => {
-    expect(source).toContain('{candidateGuest ? candidateRoleCard : <RoleCard');
+  it('до реєстрації показує лише вибір ролі й реєстрацію', () => {
+    expect(source).toContain('{candidateGuest ? <>{candidateRoleCard}{guestAuthCard}{candidateExistingDialog}</> : <RoleCard');
     expect(source).toContain('{CANDIDATE_ANKETA_ROLES.map(role => (');
-    // Поки роль не обрано, питань анкети немає: вони залежать від ролі.
-    expect(source).toContain('{candidateGuest && !candidateRole ? null : visibleSections.map(section => {');
-  });
-
-  // Гість не має акаунта: фото не завантажиш (Storage пускає лише власника
-  // теки), а публікувати нема чого. Крок збереження стоїть замість публікації.
-  it('ставить «Зберегти анкету» в кінець замість фото й публікації', () => {
-    expect(source).toContain('{candidate ? null : guestAuthCard}');
+    expect(source).toContain('{candidateGuest ? null : visibleSections.map(section => {');
     expect(source).toContain('{candidateGuest ? null : <PhotoSection');
-    expect(source).toContain("{candidateGuest ? (candidateRole ? guestAuthCard : null) : <SubmitWrap id={sectionAnchorId('publish')}");
+    expect(source).toContain("{candidateGuest ? null : <SubmitWrap id={sectionAnchorId('publish')}");
   });
 
-  // Набране їде в нову анкету тим самим кроком, що й завжди: чернетка
-  // (`draftProfileData`) — у `buildAuthProfilePayload` разом з роллю.
-  it('зберігає набране тим самим `handleAuthConfirm`', () => {
-    const confirmBody = source.slice(source.indexOf('const handleAuthConfirm = async () => {'), source.indexOf('const saveState = ('));
+  it('не пускає далі без ролі', () => {
+    expect(confirmBody).toContain('if (candidate && !candidateRole) {');
+  });
+
+  // Наявна пошта — це вхід, а не помилка: і коли Firebase каже про метод
+  // входу, і коли мовчить (захист від перебору) та відмовляє реєстрації.
+  it('реєструє автоматично, а наявну пошту одразу відкриває входом', () => {
+    expect(confirmBody).toContain("if (createError?.code !== 'auth/email-already-in-use') throw createError;");
+    expect(confirmBody).toContain('if (accountExists) {');
     expect(confirmBody).toContain('extraProfileData: draftProfileData,');
-    expect(source).toContain('onClick={handleAuthConfirm} data-testid="my-profile-auth-submit"');
+  });
+
+  it('на чужий пароль показує попап «анкета вже є»', () => {
+    expect(confirmBody).toContain('setCandidateExistingEmail(normalizedEmail);');
+    expect(source).toContain('Анкета з цією поштою вже є');
+  });
+
+  // Після входу — звичайний «Мій профіль» з меню, і лише після запису анкети.
+  it('після входу веде в «Мій профіль»', () => {
+    const persistAt = confirmBody.indexOf("await persistUserProfile(userCredential.user.uid, uploadedInfo, 'set');");
+    const navigateAt = confirmBody.indexOf("navigate('/my-profile', { replace: true });");
+    expect(persistAt).toBeGreaterThan(-1);
+    expect(navigateAt).toBeGreaterThan(persistAt);
   });
 });

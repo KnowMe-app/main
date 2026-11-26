@@ -14,8 +14,8 @@ describe('MyProfile account isolation', () => {
     source.indexOf('const saveState = (nextState')
   );
   const existingAccountBranch = authBody.slice(
-    authBody.indexOf('if (methods.length > 0) {'),
-    authBody.indexOf('} else {')
+    authBody.indexOf('if (accountExists) {'),
+    authBody.indexOf('} else {', authBody.indexOf('if (accountExists) {'))
   );
 
   it('builds a minimal login payload that cannot contain another profile\'s fields', () => {
