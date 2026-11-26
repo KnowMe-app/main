@@ -11,7 +11,9 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('loads drafts created by other users, tolerating a rules denial', () => {
     expect(source).toContain("loadSharedProfileMutations,");
-    expect(source).toContain('setSharedMutations(sortByRecency(await loadSharedProfileMutations(userId)))');
+    // Звичайному читачеві в новому сховищі перелік чужих чернеток закритий:
+    // чужу чернетку він відкриває точково, її карткою.
+    expect(source).toContain('setSharedMutations(usesUnifiedProposalStorage ? [] : sortByRecency(await loadSharedProfileMutations(userId)))');
     expect(source).toContain("console.warn('[ProfileCreationWorkspace] shared drafts unavailable', error)");
     expect(source).toContain('setSharedMutations([]);');
   });

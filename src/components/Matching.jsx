@@ -9070,8 +9070,13 @@ const Matching = () => {
                     <QueryDraftValue>{queryDraft.value}</QueryDraftValue>
                     {queryDraft.note && <QueryDraftNote>{queryDraft.note}</QueryDraftNote>}
                   </QueryDraftBody>
+                  {/* Як і в «Показати анкети»: дотик не забирає фокус з поля пошуку.
+                      Інакше blur перезапускав пошук, картка перемальовувалась між
+                      натисканням і відпусканням, і «Створити» спрацьовувало лише з
+                      другого разу. */}
                   <QueryDraftButton
                     type="button"
+                    onMouseDown={event => event.preventDefault()}
                     onClick={handleCreateFromQuery}
                     title={uiText('Створити картку з набраного', language)}
                   >

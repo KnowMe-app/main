@@ -36,6 +36,7 @@ import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../util
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
+import { usesUnifiedProposalStorage } from '../utils/profileProposalStoragePaths';
 import { CONTACT_FIELDS, isHiddenTelegramValue } from './contactMethods';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
@@ -1020,7 +1021,10 @@ export const ProfileCreationWorkspace = () => {
     // have to allow; until they do, a denial must leave the user's own
     // workspace fully usable instead of blanking the page.
     try {
-      setSharedMutations(sortByRecency(await loadSharedProfileMutations(userId)));
+      // Перелік чужих чернеток читають лише службові ролі. Звичайний читач
+      // знаходить чужу чернетку пошуком і відкриває її картку точково, тож
+      // запит, що щоразу закінчувався відмовою, тут не потрібен.
+      setSharedMutations(usesUnifiedProposalStorage ? [] : sortByRecency(await loadSharedProfileMutations(userId)));
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] shared drafts unavailable', error);
       setSharedMutations([]);
@@ -1317,7 +1321,12 @@ export const ProfileCreationWorkspace = () => {
     resetDraftOverlayState(nextDraft);
     setDraft(nextDraft);
     setSearchParams({ cardId }, { replace: true });
-    persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+    // Порожню форму не зберігаємо: кожне «Створити», яке людина відкрила й
+    // покинула, клало в чергу адміна порожню «Нову анкету». Набране з пошуку
+    // — уже дані, тож воно зберігається одразу; решта — з першим полем.
+    if (Object.keys(initialSearchData).length) {
+      persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+    }
   };
 
   const applySearchUsers = value => {
@@ -1590,7 +1599,11 @@ export const ProfileCreationWorkspace = () => {
     try {
       editor.expected = await profileProposalService.getDraft(locator);
       const creator = canonical.__profileMutationCreatedBy;
-      if (canonical.__profileMutationOperation === 'create' && creator) {
+      if (canonical.__profileMutationOperation === 'create' && canonical.__profileMutationProposalId && creator !== uid) {
+        // Стороннєму читачеві повний запис чернетки закритий; ID пропозиції
+        // приходить разом із карткою чернетки.
+        editor.targetCreateProposalId = canonical.__profileMutationProposalId;
+      } else if (canonical.__profileMutationOperation === 'create' && creator) {
         const parent = await profileProposalService.getDraft({ operation: 'create', cardId: profile.userId, createdBy: creator });
         editor.targetCreateProposalId = parent?.id;
       }
@@ -2187,6 +2200,7 @@ export const ProfileCreationWorkspace = () => {
           {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
             <InputShell>
               <FieldTextArea
+                aria-label={index ? `${label} ${index + 1}` : label}
                 value={item}
                 placeholder={placeholder ?? examplePlaceholder}
                 readOnly={inspectorOnForeignDraft}
@@ -2203,6 +2217,9 @@ export const ProfileCreationWorkspace = () => {
           {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
             <InputShell>
               <FieldInput
+                // Підпис над полем — окремий div, тож імʼя поля для екранного
+                // читача (і для автотестів) несе сам контрол.
+                aria-label={index ? `${label} ${index + 1}` : label}
                 // Дату людина бачить і набирає як `дд.мм.рррр`, хоч лежить вона
                 // в `РРРР-ММ-ДД`: показувати ISO — це дата задом наперед.
                 value={isDateField ? formatDateToDisplay(item) : item}

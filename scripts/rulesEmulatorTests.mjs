@@ -3102,15 +3102,29 @@ await it('активний шлях відкриває точну чернетк
   await assertSucceeds(set(ref(author, livePath), pending));
   await assertSucceeds(set(ref(author, ownerPath), ORDINARY_VIEWER));
   await assertSucceeds(get(ref(viewer, ownerPath)));
-  await assertSucceeds(get(ref(viewer, livePath)));
+  // Повний запис чернетки (з контактами) сторонньому закритий: йому видно
+  // картку чернетки — лише поля проєкції.
+  await assertFails(get(ref(viewer, livePath)));
   await assertFails(get(ref(viewer, `${liveProposalRoot}/heads/create/${ORDINARY_VIEWER}`)));
+  const draftCardPath = `${liveProposalRoot}/cards/${pending.cardId}`;
+  const draftCard = { name: 'Олена', city: 'Київ', role: 'ed', createdBy: ORDINARY_VIEWER, status: 'pendingReview', revision: 1, updatedAt: 1 };
+  await assertFails(set(ref(viewer, draftCardPath), { ...draftCard, createdBy: OUTSIDER }));
+  await assertFails(set(ref(viewer, draftCardPath), draftCard));
+  await assertFails(set(ref(author, draftCardPath), { ...draftCard, phone: '380509781010' }));
+  await assertFails(set(ref(author, draftCardPath), { ...draftCard, createdBy: OUTSIDER }));
+  await assertSucceeds(set(ref(author, draftCardPath), draftCard));
+  await assertSucceeds(get(ref(viewer, draftCardPath)));
+  await assertFails(get(ref(viewer, `${liveProposalRoot}/cards`)));
   await assertSucceeds(get(ref(inspector, `${liveProposalRoot}/heads/create`)));
   await assertFails(update(ref(inspector, livePath), { status: 'private', revision: 2 }));
   const ownInspector = liveCreatePath(proposalInspector, 'cutoverInspector01');
   await assertSucceeds(set(ref(inspector, ownInspector), { ...pending, cardId: 'cutoverInspector01', createdBy: proposalInspector }));
   await assertSucceeds(update(ref(admin, livePath), { status: 'private', revision: 2 }));
+  await assertSucceeds(update(ref(admin, draftCardPath), { status: 'private', revision: 2 }));
   await assertFails(get(ref(viewer, livePath)));
   await assertFails(get(ref(viewer, ownerPath)));
+  // Повернута автору чернетка лишається видимою на рівні картки.
+  await assertSucceeds(get(ref(viewer, draftCardPath)));
   await assertSucceeds(get(ref(author, livePath)));
   await assertSucceeds(update(ref(author, livePath), { status: 'pendingReview', revision: 3 }));
 });
@@ -3192,6 +3206,15 @@ await it('власник активної чернетки керує її до�
   await assertSucceeds(get(ref(author, `${liveProposalRoot}/contributors/${cardId}`)));
   await assertSucceeds(remove(ref(author, linked)));
   await assertSucceeds(remove(ref(author, `${liveProposalRoot}/contributors/${cardId}`)));
+  // Повернута автору чернетка лишається спільною: дописувач і далі додає
+  // контакт, а знайти її можна за ним, не чекаючи адміна.
+  await testEnv.withSecurityRulesDisabled(context => update(
+    ref(context.database(), liveCreatePath(ORDINARY_VIEWER, cardId)), { status: 'private' },
+  ));
+  await assertSucceeds(set(ref(contributor, linked), { ...proposalOverlay(cardId, OUTSIDER), proposal: metadata }));
+  await testEnv.withSecurityRulesDisabled(context => update(
+    ref(context.database(), liveCreatePath(ORDINARY_VIEWER, cardId)), { status: 'pendingReview' },
+  ));
 });
 
 await it('нова історія має операцію й ціль, а старі рішення лишаються закритими', async () => {
