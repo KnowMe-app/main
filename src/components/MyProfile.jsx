@@ -1580,6 +1580,23 @@ const readMyProfileDraft = () => {
 // перша відповідь Firebase («гостя немає») скидає стан і піднімає його саме з
 // чернетки (`resetAuthenticatedProfileState` → `restoreLocalDraft`), тож роль,
 // поставлена ефектом, до неї не доживала.
+// Що з гостьової чернетки не переноситься в наявну анкету: роль, вхід і
+// службове вирішують акаунт і «Хто ви», а не форма кандидатки.
+const CANDIDATE_DRAFT_SKIPPED_FIELDS = new Set([
+  'userRole', 'role', 'email', 'password', 'userId', 'areTermsConfirmed',
+  'publish', 'publishAudience', 'photos', 'lastLogin', 'lastLogin2', 'registrationDate',
+]);
+
+// Одне нагадування кандидатці, що лишилось для збереження анкети.
+const candidateAuthReminder = (miss, email) => {
+  const parts = [];
+  if (miss.email) parts.push(email ? 'правильну пошту' : 'пошту');
+  if (miss.password) parts.push('пароль');
+  const fill = parts.length ? `вкажіть угорі ${parts.join(' і ')}` : '';
+  const agree = miss.terms ? 'погодьтесь з умовами' : '';
+  return `Щоб зберегти анкету, ${[fill, agree].filter(Boolean).join(' та ')}.`;
+};
+
 const seedCandidateDraftRole = draft => {
   const currentRole = String(draft?.userRole || draft?.role || '').trim().toLowerCase();
   if (CANDIDATE_ANKETA_ROLES.includes(currentRole)) return draft;
@@ -2569,9 +2586,10 @@ export const MyProfile = ({ candidate = false } = {}) => {
   }, [language, userId]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => (candidateGuest ? [
-    // До реєстрації в кандидатки один крок — сама реєстрація; анкета з
-    // розділами відкривається вже в «Моєму профілі».
-    { key: 'auth', title: 'Реєстрація', fields: ['email', 'password', 'terms'], isVirtual: true },
+    // Пошта й пароль — угорі, далі розділи анкети; фото й публікація
+    // відкриваються після збереження (акаунта до нього немає).
+    { key: 'auth', title: 'Пошта й пароль', fields: ['email', 'password', 'terms'], isVirtual: true },
+    ...visibleSections,
   ] : [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
     { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
@@ -2967,22 +2985,26 @@ export const MyProfile = ({ candidate = false } = {}) => {
     const password = String(currentState.password || '');
     const miss = {};
 
+    // Кандидатці — одне нагадування замість трьох тостів поспіль: що саме
+    // заповнити, щоб анкета збереглась (`candidateAuthReminder`).
+    const notify = candidate ? () => {} : null;
+
     if (!normalizedEmail) {
       miss.email = true;
-      authNotifications.emailRequired();
+      (notify || authNotifications.emailRequired)();
     } else if (!isValidEmail(normalizedEmail)) {
       miss.email = true;
-      authNotifications.invalidEmail();
+      (notify || authNotifications.invalidEmail)();
     }
 
     if (!password.trim()) {
       miss.password = true;
-      authNotifications.passwordRequired();
+      (notify || authNotifications.passwordRequired)();
     }
 
     if (!hasAgreed) {
       miss.terms = true;
-      authNotifications.termsRequired();
+      (notify || authNotifications.termsRequired)();
     }
 
     // На посиланні для кандидаток роль — частина реєстрації: від неї залежить,
@@ -2990,9 +3012,15 @@ export const MyProfile = ({ candidate = false } = {}) => {
     if (candidate && !candidateRole) {
       miss.candidateRole = true;
       toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
+      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
     }
 
     setMissing(miss);
+
+    if (candidate && (miss.email || miss.password || miss.terms)) {
+      toast.error(candidateAuthReminder(miss, normalizedEmail), { id: 'candidate-auth-reminder' });
+      scrollToSection('auth', { focus: true });
+    }
 
     if (Object.keys(miss).length) return;
     if (authSubmitting) return;
@@ -3027,6 +3055,19 @@ export const MyProfile = ({ candidate = false } = {}) => {
         uploadedInfo = buildAuthSessionPayload({ todayDays, todayDash });
         await persistUserProfile(userCredential.user.uid, uploadedInfo, 'update');
         authenticatedProfileLoaded = await loadAuthenticatedProfile(userCredential.user.uid);
+        // Кандидатка з посилання вже заповнила анкету, а пошта виявилась
+        // наявним акаунтом: набране не губимо, але й наявного не переписуємо —
+        // лише порожні поля анкети стають незбереженими правками, і «Мій
+        // профіль» дописує їх на відкритті (`utils/myProfilePendingEdits`).
+        if (candidate) {
+          const existing = persistedProfileRef.current?.data || {};
+          Object.entries(draftProfileData).forEach(([name, value]) => {
+            if (CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name) || name.startsWith('__')) return;
+            if (String(getCurrentValue(value) ?? '').trim() === '') return;
+            if (String(getCurrentValue(existing[name]) ?? '').trim() !== '') return;
+            rememberPendingProfileEdit(userCredential.user.uid, name, value, { searchId: isSearchIdIndexedField(name) });
+          });
+        }
       } else {
         // Лист не тримає реєстрацію: відмова надіслати його не мусить
         // лишати новий акаунт без анкети (`utils/emailVerification`).
@@ -4177,16 +4218,18 @@ export const MyProfile = ({ candidate = false } = {}) => {
   const guestAuthCard = !isProfileAccessConfirmed ? (
   <AuthCard id={sectionAnchorId('auth')} ref={node => { sectionRefs.current.auth = node; }}>
         <Header>
-          <SectionHeading tabIndex={-1} data-section-heading>{uiText(candidate ? 'Реєстрація' : 'Доступ до анкети', language)}</SectionHeading>
+          <SectionHeading tabIndex={-1} data-section-heading>{uiText(candidate ? 'Пошта й пароль' : 'Доступ до анкети', language)}</SectionHeading>
         </Header>
         <FieldGroup>
+          {/* Кандидатці пояснень про вхід не треба: пошта й пароль — просто
+              два поля анкети, а зберігає все одна кнопка внизу. */}
+          {candidate ? null : (
           <Field>
             <AuthIntro>
-              {candidate
-                ? 'Вкажіть пошту й придумайте пароль — з ними ви будете входити до своєї анкети. Якщо ви вже реєструвались з цією поштою, ми просто відкриємо вашу анкету.'
-                : 'Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.'}
+              Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
             </AuthIntro>
           </Field>
+          )}
           <AuthField $missing={missing.email}>
             <HighlightableLabel as="label" htmlFor={fieldControlId('email')} $active={authHintStep === 'email'}>Email</HighlightableLabel>
             <FieldControl>
@@ -4269,7 +4312,9 @@ export const MyProfile = ({ candidate = false } = {}) => {
               <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
             </TermsText>
           </TermsRow>
-          <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">{candidate ? (authSubmitting ? 'Зачекайте…' : 'Почати заповнення анкети') : uiText('Підтвердити і продовжити', language)}</AuthActionButton>
+          {candidate ? null : (
+            <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">{uiText('Підтвердити і продовжити', language)}</AuthActionButton>
+          )}
         </FieldGroup>
       </AuthCard>
   ) : null;
@@ -4297,6 +4342,16 @@ export const MyProfile = ({ candidate = false } = {}) => {
           </CandidateRoleOption>
         ))}
       </CandidateRoleGrid>
+    </CandidateRoleCard>
+  );
+
+  // Одна кнопка внизу анкети: створює акаунт (або входить у наявний) і
+  // зберігає все набране. Чого бракує для входу — нагадує сама.
+  const candidateSaveCard = (
+    <CandidateRoleCard as="div" data-testid="candidate-save-card">
+      <AuthActionButton type="button" onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">
+        {authSubmitting ? 'Зачекайте…' : 'Зберегти анкету'}
+      </AuthActionButton>
     </CandidateRoleCard>
   );
 
@@ -4394,7 +4449,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
     {/* Поки кандидатка не зареєструвалась, смуга прогресу й вкладки говорили
         б про анкету, якої ще немає. Панель лишається змонтованою (її міряє
         `ResizeObserver`), лише невидимою. */}
-    <StickyProgress ref={stickyProgressRef} $compact={editingProgram} style={candidateGuest ? { display: 'none' } : undefined}>
+    <StickyProgress ref={stickyProgressRef} $compact={editingProgram} style={candidateGuest && !candidateRole ? { display: 'none' } : undefined}>
       <ProgressWrap>
         <ProgressLabel>
           <span>{uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
@@ -4499,7 +4554,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
     </PhotoSection>}
 
 
-    {candidateGuest ? null : visibleSections.map(section => {
+    {candidateGuest && !candidateRole ? null : visibleSections.map(section => {
       const SectionCard = !isProfileAccessConfirmed && section.key === firstSectionKey ? FirstContentCard : Card;
       const anketaLabel = section.anketaRole
         ? MY_PROFILE_ROLE_OPTIONS.find(option => option.value === section.anketaRole)?.label || section.anketaRole
@@ -4701,7 +4756,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
         (вигляд — у коментарях до `PublishHead` і `WayCard`). «Очистити»
         питає підтвердження тією самою модалкою (`clearRoleTarget`), що й
         пункт меню «⋮». */}
-    {candidateGuest ? null : <SubmitWrap id={sectionAnchorId('publish')} ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
+    {candidateGuest ? (candidateRole ? candidateSaveCard : null) : <SubmitWrap id={sectionAnchorId('publish')} ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <SectionHeading tabIndex={-1} data-section-heading>{uiText('Публікація', language)}</SectionHeading>
         <span data-testid="publish-status">

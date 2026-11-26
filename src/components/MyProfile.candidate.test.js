@@ -15,12 +15,25 @@ describe('«Мій профіль» як посилання для кандид�
     expect(source).toContain("const language = candidate ? 'uk' : appLanguage;");
   });
 
-  it('до реєстрації показує лише вибір ролі й реєстрацію', () => {
+  // Одна сторінка: роль, пошта й пароль угорі, анкета під ними, внизу одна
+  // кнопка «Зберегти анкету» замість фото й публікації.
+  it('ставить реєстрацію й анкету на одну сторінку з кнопкою внизу', () => {
     expect(source).toContain('{candidateGuest ? <>{candidateRoleCard}{guestAuthCard}{candidateExistingDialog}</> : <RoleCard');
     expect(source).toContain('{CANDIDATE_ANKETA_ROLES.map(role => (');
-    expect(source).toContain('{candidateGuest ? null : visibleSections.map(section => {');
+    expect(source).toContain('{candidateGuest && !candidateRole ? null : visibleSections.map(section => {');
     expect(source).toContain('{candidateGuest ? null : <PhotoSection');
-    expect(source).toContain("{candidateGuest ? null : <SubmitWrap id={sectionAnchorId('publish')}");
+    expect(source).toContain("{candidateGuest ? (candidateRole ? candidateSaveCard : null) : <SubmitWrap id={sectionAnchorId('publish')}");
+  });
+
+  it('нагадує одним тостом, чого бракує для збереження', () => {
+    expect(confirmBody).toContain("toast.error(candidateAuthReminder(miss, normalizedEmail), { id: 'candidate-auth-reminder' });");
+  });
+
+  // Набране кандидаткою не губиться й тоді, коли пошта вже мала акаунт, але
+  // наявних полів не переписує.
+  it('у наявному акаунті дописує лише порожні поля', () => {
+    expect(confirmBody).toContain('rememberPendingProfileEdit(userCredential.user.uid, name, value');
+    expect(confirmBody).toContain("if (String(getCurrentValue(existing[name]) ?? '').trim() !== '') return;");
   });
 
   it('не пускає далі без ролі', () => {
