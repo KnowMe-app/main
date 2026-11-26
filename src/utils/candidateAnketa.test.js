@@ -1,4 +1,4 @@
-import { buildCandidateAnketaLink, CANDIDATE_ANKETA_ROLES, readCandidateRoleFromSearch } from './candidateAnketa';
+import { buildCandidateAnketaLink, CANDIDATE_ANKETA_ROLES, markCandidateSignup, readCandidateDraftFields, readCandidateRoleFromSearch, takeCandidateSignup } from './candidateAnketa';
 
 describe('посилання на анкету для кандидаток', () => {
   it('пропонує лише донорку й СМ', () => {
@@ -25,5 +25,24 @@ describe('посилання на анкету для кандидаток', () 
     expect(buildCandidateAnketaLink('https://knowme.pp.ua/')).toBe('https://knowme.pp.ua/anketa');
     expect(buildCandidateAnketaLink('https://knowme.pp.ua', 'sm')).toBe('https://knowme.pp.ua/anketa?role=sm');
     expect(buildCandidateAnketaLink('https://knowme.pp.ua', 'ag')).toBe('https://knowme.pp.ua/anketa');
+  });
+});
+
+describe('вхід кандидатки через Telegram', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('позначка живе один раз і годину', () => {
+    markCandidateSignup('sm');
+    expect(takeCandidateSignup()).toMatchObject({ role: 'sm' });
+    expect(takeCandidateSignup()).toBeNull();
+    markCandidateSignup('ed');
+    expect(takeCandidateSignup(Date.now() + 2 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  it('бере з чернетки набране, без входу й ролі', () => {
+    localStorage.setItem('myProfileDraft', JSON.stringify({
+      name: 'Олена', city: '', userRole: 'sm', email: 'x@y.z', password: 'p', surname: ['Стара', 'Нова'],
+    }));
+    expect(readCandidateDraftFields()).toEqual({ name: 'Олена', surname: ['Стара', 'Нова'] });
   });
 });

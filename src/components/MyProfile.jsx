@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
-import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
+import { FaCheck, FaEye, FaEyeSlash, FaLock, FaTelegramPlane } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import { ScreenLoading } from './RequireAuth';
 import {
@@ -16,6 +16,7 @@ import {
   syncUserSearchIdIndex,
   updateProfileRole,
   refreshOwnProfileAfterMerge,
+  hasAccountRegistration,
 } from './config';
 import {
   LIKED_AUDIENCE,
@@ -40,10 +41,20 @@ import { readDeliveryDate } from '../utils/deliveryDateInput';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
+  getAdditionalUserInfo,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
 } from 'firebase/auth';
+import { FcGoogle } from 'react-icons/fc';
+import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from '../utils/googleAuth';
+import {
+  buildTelegramLoginLink,
+  createTelegramLoginNonce,
+  isTelegramLoginAvailable,
+  saveTelegramLoginAttempt,
+} from '../utils/telegramAuth';
 import { requestPasswordResetEmail, requestVerificationEmail } from '../utils/emailVerification';
 import Photos from './Photos';
 import InfoModal, {
@@ -63,6 +74,7 @@ import { authNotifications } from './authNotifications';
 import TelegramLinkCard from './TelegramLinkCard';
 import SignInMethodsCard from './SignInMethodsCard';
 import {
+  buildAuthLoginPayload,
   buildAuthProfilePayload,
   buildAuthSessionPayload,
   markAuthSession,
@@ -103,7 +115,7 @@ import {
   subscribePendingProfileEdits,
 } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
-import { CANDIDATE_ANKETA_ROLES, readCandidateRoleFromSearch } from '../utils/candidateAnketa';
+import { CANDIDATE_ANKETA_ROLES, CANDIDATE_DRAFT_SKIPPED_FIELDS, markCandidateSignup, readCandidateRoleFromSearch } from '../utils/candidateAnketa';
 import {
   DEFAULT_REWARD_CURRENCY,
   MY_PROFILE_HABIT_CHOICES,
@@ -949,6 +961,33 @@ const CandidateDialogActions = styled.div`
   gap: 12px;
   text-align: center;
 `;
+const CandidateMethods = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+`;
+// Рівні кнопки, як у формі входу (`AuthMethodButton`): заливка без рамки.
+const CandidateMethodButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--km-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
+  &:disabled { opacity: .6; cursor: default; }
+`;
+const CandidateOrEmail = styled.p`margin:14px 0 0;font-size:13px;color:var(--muted);text-align:center;`;
 const CandidateRoleHint = styled.p`margin:6px 0 14px;font-size:13px;line-height:1.45;color:var(--muted);`;
 const CandidateRoleGrid = styled.div`
   display: grid;
@@ -1580,21 +1619,36 @@ const readMyProfileDraft = () => {
 // перша відповідь Firebase («гостя немає») скидає стан і піднімає його саме з
 // чернетки (`resetAuthenticatedProfileState` → `restoreLocalDraft`), тож роль,
 // поставлена ефектом, до неї не доживала.
-// Що з гостьової чернетки не переноситься в наявну анкету: роль, вхід і
-// службове вирішують акаунт і «Хто ви», а не форма кандидатки.
-const CANDIDATE_DRAFT_SKIPPED_FIELDS = new Set([
-  'userRole', 'role', 'email', 'password', 'userId', 'areTermsConfirmed',
-  'publish', 'publishAudience', 'photos', 'lastLogin', 'lastLogin2', 'registrationDate',
-]);
 
-// Одне нагадування кандидатці, що лишилось для збереження анкети.
+// Одне нагадування кандидатці, що лишилось для збереження анкети: увійти
+// будь-яким способом угорі й погодитись з умовами.
 const candidateAuthReminder = (miss, email) => {
   const parts = [];
   if (miss.email) parts.push(email ? 'правильну пошту' : 'пошту');
   if (miss.password) parts.push('пароль');
-  const fill = parts.length ? `вкажіть угорі ${parts.join(' і ')}` : '';
+  const fill = parts.length
+    ? `увійдіть угорі через Telegram чи Google або вкажіть ${parts.join(' і ')}`
+    : '';
   const agree = miss.terms ? 'погодьтесь з умовами' : '';
   return `Щоб зберегти анкету, ${[fill, agree].filter(Boolean).join(' та ')}.`;
+};
+
+// Набране кандидаткою, що лягає в нову анкету: без порожнього й службового.
+const cleanCandidateDraft = draft => Object.fromEntries(Object.entries(draft || {})
+  .filter(([name, value]) => !CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name)
+    && !name.startsWith('__')
+    && String(getCurrentValue(value) ?? '').trim() !== ''));
+
+// Кандидатка з посилання вже заповнила анкету, а вхід відкрив наявний
+// акаунт: набране не губимо, але й наявного не переписуємо — лише порожні
+// поля анкети стають незбереженими правками, і «Мій профіль» дописує їх на
+// відкритті (`utils/myProfilePendingEdits`).
+const rememberCandidateDraftForExistingAccount = (uid, existing, draft) => {
+  const base = existing || {};
+  Object.entries(cleanCandidateDraft(draft)).forEach(([name, value]) => {
+    if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;
+    rememberPendingProfileEdit(uid, name, value, { searchId: isSearchIdIndexedField(name) });
+  });
 };
 
 const seedCandidateDraftRole = draft => {
@@ -2586,9 +2640,9 @@ export const MyProfile = ({ candidate = false } = {}) => {
   }, [language, userId]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => (candidateGuest ? [
-    // Пошта й пароль — угорі, далі розділи анкети; фото й публікація
+    // Вхід (Telegram, Google, пошта з паролем) — угорі, далі розділи анкети; фото й публікація
     // відкриваються після збереження (акаунта до нього немає).
-    { key: 'auth', title: 'Пошта й пароль', fields: ['email', 'password', 'terms'], isVirtual: true },
+    { key: 'auth', title: 'Вхід', fields: ['email', 'password', 'terms'], isVirtual: true },
     ...visibleSections,
   ] : [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -3060,13 +3114,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
         // лише порожні поля анкети стають незбереженими правками, і «Мій
         // профіль» дописує їх на відкритті (`utils/myProfilePendingEdits`).
         if (candidate) {
-          const existing = persistedProfileRef.current?.data || {};
-          Object.entries(draftProfileData).forEach(([name, value]) => {
-            if (CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name) || name.startsWith('__')) return;
-            if (String(getCurrentValue(value) ?? '').trim() === '') return;
-            if (String(getCurrentValue(existing[name]) ?? '').trim() !== '') return;
-            rememberPendingProfileEdit(userCredential.user.uid, name, value, { searchId: isSearchIdIndexedField(name) });
-          });
+          rememberCandidateDraftForExistingAccount(userCredential.user.uid, persistedProfileRef.current?.data, draftProfileData);
         }
       } else {
         // Лист не тримає реєстрацію: відмова надіслати його не мусить
@@ -3138,6 +3186,89 @@ export const MyProfile = ({ candidate = false } = {}) => {
     } finally {
       setAuthSubmitting(false);
     }
+  };
+
+  // Роль і згода — спільна умова будь-якого способу входу кандидатки: без
+  // ролі невідомо, яку анкету заводити, а без згоди реєструвати не можна.
+  const checkCandidateReadyForSignIn = () => {
+    const miss = {};
+    if (!candidateRole) miss.candidateRole = true;
+    if (!hasAgreed) miss.terms = true;
+    if (!Object.keys(miss).length) return true;
+    setMissing(prev => ({ ...prev, ...miss }));
+    if (miss.candidateRole) {
+      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
+      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
+    } else {
+      toast.error('Щоб продовжити, погодьтесь з умовами.', { id: 'candidate-auth-reminder' });
+    }
+    return false;
+  };
+
+  // Вхід кандидатки через Google — вікном, як і у формі входу (`utils/googleAuth`).
+  // Новий акаунт одразу отримує роль і все набране; наявний — вхід, а набране
+  // лягає лише в порожні поля його анкети.
+  const handleCandidateGoogle = async () => {
+    if (authSubmitting || !checkCandidateReadyForSignIn()) return;
+    setAuthSubmitting(true);
+    try {
+      const { todayDays, todayDash } = getCurrentDate();
+      const draft = stateRef.current || {};
+      const credential = await signInWithPopup(auth, createGoogleAuthProvider());
+      const uid = credential.user.uid;
+      const additional = getAdditionalUserInfo(credential);
+      const profileData = buildGoogleProfileData(credential.user, additional?.profile);
+      const isNew = Boolean(additional?.isNewUser) || !(await hasAccountRegistration(uid).catch(() => true));
+      if (isNew) {
+        const uploadedInfo = buildAuthProfilePayload({
+          email: profileData.email || '',
+          userId: uid,
+          userRole: candidateRole,
+          todayDays,
+          todayDash,
+          isRegistration: true,
+          // Набране людиною важить більше за імʼя з Google.
+          extraProfileData: { ...profileData, ...cleanCandidateDraft(draft), role: candidateRole },
+        });
+        await persistUserProfile(uid, uploadedInfo, 'set');
+      } else {
+        const existing = await fetchUserById(uid, { includePhotos: false }).catch(() => null);
+        rememberCandidateDraftForExistingAccount(uid, existing, draft);
+        void persistUserProfile(uid, buildAuthLoginPayload({ email: profileData.email || '', userId: uid, todayDays, todayDash }), 'update', { revisionNeutral: true })
+          .catch(error => console.warn('[candidate] не вдалося записати дату входу', error));
+      }
+      markAuthSession({ email: profileData.email || '', userId: uid });
+      navigate('/my-profile', { replace: true });
+    } catch (error) {
+      if (isGoogleSignInCancelled(error)) return;
+      if (error?.code === 'auth/popup-blocked') {
+        toast.error('Браузер заблокував вікно Google. Дозвольте спливні вікна й спробуйте ще раз');
+      } else if (error?.code === 'auth/account-exists-with-different-credential') {
+        toast.error('Ця пошта вже має акаунт KnowMe. Увійдіть поштою й паролем');
+      } else if (error?.code === 'auth/operation-not-allowed' || error?.code === 'auth/unauthorized-domain') {
+        toast.error('Вхід через Google ще не ввімкнено. Увійдіть іншим способом');
+      } else {
+        console.error('[candidate] вхід через Google не вдався', error);
+        toast.error('Не вдалося увійти через Google. Спробуйте ще раз або оберіть інший спосіб');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  // Telegram — бот у застосунку Telegram, а завершує вхід форма входу: вона
+  // чекає номер, питає код і заводить акаунт з роллю зі спроби. Тож тут —
+  // лише спроба з роллю, позначка «прийшла з анкети» (форма дописує набране в
+  // нову анкету, `markCandidateSignup`) і перехід на форму, що вже чекає.
+  const [candidateTelegramNonce] = useState(() => (candidate && isTelegramLoginAvailable() ? createTelegramLoginNonce() : ''));
+  const handleCandidateTelegram = event => {
+    if (!checkCandidateReadyForSignIn()) {
+      event.preventDefault();
+      return;
+    }
+    saveTelegramLoginAttempt({ nonce: candidateTelegramNonce, startedAt: Date.now(), role: candidateRole });
+    markCandidateSignup(candidateRole);
+    navigate('/login', { state: { returnTo: '/my-profile', candidateRole, termsAccepted: true } });
   };
 
   // Лист для зміни пароля з попапу «анкета вже є». Відповідь однакова для
@@ -4218,12 +4349,39 @@ export const MyProfile = ({ candidate = false } = {}) => {
   const guestAuthCard = !isProfileAccessConfirmed ? (
   <AuthCard id={sectionAnchorId('auth')} ref={node => { sectionRefs.current.auth = node; }}>
         <Header>
-          <SectionHeading tabIndex={-1} data-section-heading>{uiText(candidate ? 'Пошта й пароль' : 'Доступ до анкети', language)}</SectionHeading>
+          <SectionHeading tabIndex={-1} data-section-heading>{uiText(candidate ? 'Вхід до анкети' : 'Доступ до анкети', language)}</SectionHeading>
         </Header>
         <FieldGroup>
-          {/* Кандидатці пояснень про вхід не треба: пошта й пароль — просто
-              два поля анкети, а зберігає все одна кнопка внизу. */}
-          {candidate ? null : (
+          {/* Кандидатці — одне пояснення, навіщо вхід, і три рівні способи:
+              Telegram, Google, пошта з паролем. Зберегти анкету можна й
+              кнопкою внизу, якщо «Продовжити» тут не натиснули. */}
+          {candidate ? (
+            <Field>
+              <AuthIntro data-testid="candidate-auth-why">
+                Вхід потрібен, щоб потім виправити чи видалити свою анкету. Оберіть зручний спосіб.
+              </AuthIntro>
+              <CandidateMethods>
+                {candidateTelegramNonce ? (
+                  <CandidateMethodButton
+                    as="a"
+                    href={buildTelegramLoginLink(candidateTelegramNonce)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleCandidateTelegram}
+                    data-testid="candidate-telegram"
+                  >
+                    <FaTelegramPlane size={18} color="#229ED9" aria-hidden="true" />
+                    Увійти через Telegram
+                  </CandidateMethodButton>
+                ) : null}
+                <CandidateMethodButton type="button" onClick={handleCandidateGoogle} disabled={authSubmitting} data-testid="candidate-google">
+                  <FcGoogle size={18} aria-hidden="true" />
+                  Увійти через Google
+                </CandidateMethodButton>
+              </CandidateMethods>
+              <CandidateOrEmail>або поштою й паролем</CandidateOrEmail>
+            </Field>
+          ) : (
           <Field>
             <AuthIntro>
               Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
@@ -4312,7 +4470,11 @@ export const MyProfile = ({ candidate = false } = {}) => {
               <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
             </TermsText>
           </TermsRow>
-          {candidate ? null : (
+          {candidate ? (
+            <AuthActionButton type="button" onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="candidate-continue">
+              {authSubmitting ? 'Зачекайте…' : 'Продовжити'}
+            </AuthActionButton>
+          ) : (
             <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="my-profile-auth-submit">{uiText('Підтвердити і продовжити', language)}</AuthActionButton>
           )}
         </FieldGroup>

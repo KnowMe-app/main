@@ -32,8 +32,25 @@ describe('«Мій профіль» як посилання для кандид�
   // Набране кандидаткою не губиться й тоді, коли пошта вже мала акаунт, але
   // наявних полів не переписує.
   it('у наявному акаунті дописує лише порожні поля', () => {
-    expect(confirmBody).toContain('rememberPendingProfileEdit(userCredential.user.uid, name, value');
-    expect(confirmBody).toContain("if (String(getCurrentValue(existing[name]) ?? '').trim() !== '') return;");
+    expect(confirmBody).toContain('rememberCandidateDraftForExistingAccount(userCredential.user.uid, persistedProfileRef.current?.data, draftProfileData);');
+    expect(source).toContain("if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;");
+  });
+
+  // Вхід — у самій анкеті: пояснення навіщо, Telegram, Google, пошта з
+  // паролем і «Продовжити» після згоди; «Зберегти анкету» внизу робить те саме.
+  it('пропонує три способи входу з поясненням і кнопку «Продовжити»', () => {
+    expect(source).toContain('Вхід потрібен, щоб потім виправити чи видалити свою анкету.');
+    expect(source).toContain('data-testid="candidate-telegram"');
+    expect(source).toContain('data-testid="candidate-google"');
+    expect(source).toContain('onClick={handleAuthConfirm} disabled={authSubmitting} data-testid="candidate-continue"');
+  });
+
+  it('Google і Telegram вимагають ролі й згоди так само, як пошта', () => {
+    const google = source.slice(source.indexOf('const handleCandidateGoogle = async () => {'));
+    expect(google).toContain('if (authSubmitting || !checkCandidateReadyForSignIn()) return;');
+    const telegram = source.slice(source.indexOf('const handleCandidateTelegram = event => {'));
+    expect(telegram).toContain('if (!checkCandidateReadyForSignIn()) {');
+    expect(telegram).toContain('markCandidateSignup(candidateRole);');
   });
 
   it('не пускає далі без ролі', () => {
