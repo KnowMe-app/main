@@ -863,7 +863,6 @@
               "$creatorUid": {
                 ".read": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && auth.uid == $creatorUid)",
                 "$cardId": {
-                  ".read": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && (data.child('operation').val() == 'create' && (data.child('status').val() == 'pendingReview' || data.child('status').val() == 'publishing')) && (!root.child('matchingCards').child($cardId).exists() && !root.child('profileDetails').child($cardId).exists() && !root.child('profileContacts').child($cardId).exists() && !root.child('profileWorkflow').child($cardId).exists() && !root.child('profileTechnical').child($cardId).exists()))",
                   ".write": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == $creatorUid) && (newData.exists() || data.child('status').val() != 'publishing' || !data.child('publicationAttemptId').exists()))",
                   ".validate": "(newData.child('operation').val() == 'create') && (newData.hasChildren(['cardId', 'operation', 'createdBy', 'status', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('createdBy').val() == $creatorUid && ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') || (newData.child('operation').val() == 'create' && newData.child('status').val() == 'pendingReview' && newData.child('revision').isNumber() && (!newData.child('data').child('userId').exists() || newData.child('data').child('userId').val() == $cardId) && ((!data.exists() && newData.child('revision').val() == 1 && (!root.child('multiData').child('profileProposals').child('live').child('owners').child($cardId).exists() || root.child('multiData').child('profileProposals').child('live').child('owners').child($cardId).val() == $creatorUid) && (!root.child('matchingCards').child($cardId).exists() && !root.child('profileDetails').child($cardId).exists() && !root.child('profileContacts').child($cardId).exists() && !root.child('profileWorkflow').child($cardId).exists() && !root.child('profileTechnical').child($cardId).exists())) || (data.exists() && (data.child('status').val() == 'pendingReview' || data.child('status').val() == 'private' || (data.child('status').val() == 'publishing' && !data.child('publicationAttemptId').exists())) && ((data.child('revision').isNumber() && newData.child('revision').val() == data.child('revision').val() + 1) || (!data.child('revision').isNumber() && newData.child('revision').val() > 0)) && (!data.child('proposalId').exists() || (data.child('proposalId').exists() && newData.child('proposalId').val() == data.child('proposalId').val())) && (!data.child('createdAt').exists() || (data.child('createdAt').exists() && newData.child('createdAt').val() == data.child('createdAt').val()))))) || (newData.child('operation').val() == 'update' && newData.child('status').val() == 'draft' && (!data.exists() || (data.child('operation').val() == 'update' && data.child('status').val() == 'draft')))) && ((!data.child('publicationAttemptId').exists() && !newData.child('publicationAttemptId').exists() && !newData.child('publicationActorUid').exists()) || ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') && data.child('operation').val() == 'create' && newData.child('operation').val() == 'create' && newData.child('revision').val() == data.child('revision').val() && ((!data.child('publicationAttemptId').exists() && (data.child('status').val() == 'pendingReview' || data.child('status').val() == 'private' || data.child('status').val() == 'publishing') && newData.child('status').val() == 'publishing' && newData.child('publicationAttemptId').isString() && newData.child('publicationAttemptId').val().length > 0 && newData.child('publicationAttemptId').val().length <= 128 && newData.child('publicationActorUid').val() == auth.uid) || (data.child('status').val() == 'publishing' && data.child('publicationAttemptId').exists() && data.child('publicationActorUid').val() == auth.uid && ((newData.child('status').val() == 'accepted' && newData.child('publicationAttemptId').val() == data.child('publicationAttemptId').val() && newData.child('publicationActorUid').val() == auth.uid && !root.child('matchingCards').child($cardId).exists() && !root.child('profileDetails').child($cardId).exists() && !root.child('profileContacts').child($cardId).exists() && !root.child('profileWorkflow').child($cardId).exists() && !root.child('profileTechnical').child($cardId).exists()) || (!newData.child('publicationAttemptId').exists() && !newData.child('publicationActorUid').exists() && (newData.child('status').val() == 'pendingReview' || newData.child('status').val() == 'private' || newData.child('status').val() == 'publishing'))))))))",
                   "data": {
@@ -880,7 +879,7 @@
                 ".read": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'publishing')))",
                 "$editorUserId": {
                   ".read": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && auth.uid == $editorUserId)",
-                  ".write": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (!data.child('reviewClaim').exists() && !newData.child('reviewClaim').exists() && ((auth.uid == $editorUserId && (!newData.exists() || ((root.child('matchingCards').child($cardUserId).exists() && (root.child('matchingCards').child($cardUserId).child('audience').val() != 'liked' || auth.uid == $cardUserId || root.child('multiData').child('favorites').child($cardUserId).child(auth.uid).exists())) || (auth.uid == $cardUserId && (root.child('profileDetails').child($cardUserId).exists() || root.child('profileContacts').child($cardUserId).exists() || root.child('profileWorkflow').child($cardUserId).exists() || root.child('profileTechnical').child($cardUserId).exists())) || (root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).isString() && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('operation').val() == 'create' && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('status').val() == 'publishing')) && (!root.child('matchingCards').child($cardUserId).exists() && !root.child('profileDetails').child($cardUserId).exists() && !root.child('profileContacts').child($cardUserId).exists() && !root.child('profileWorkflow').child($cardUserId).exists() && !root.child('profileTechnical').child($cardUserId).exists()))))) || (!newData.exists() && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'publishing'))))))",
+                  ".write": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (!data.child('reviewClaim').exists() && !newData.child('reviewClaim').exists() && ((auth.uid == $editorUserId && (!newData.exists() || ((root.child('matchingCards').child($cardUserId).exists() && (root.child('matchingCards').child($cardUserId).child('audience').val() != 'liked' || auth.uid == $cardUserId || root.child('multiData').child('favorites').child($cardUserId).child(auth.uid).exists())) || (auth.uid == $cardUserId && (root.child('profileDetails').child($cardUserId).exists() || root.child('profileContacts').child($cardUserId).exists() || root.child('profileWorkflow').child($cardUserId).exists() || root.child('profileTechnical').child($cardUserId).exists())) || (root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).isString() && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('operation').val() == 'create' && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(root.child('multiData').child('profileProposals').child('live').child('owners').child($cardUserId).val()).child($cardUserId).child('status').val() == 'publishing')) && (!root.child('matchingCards').child($cardUserId).exists() && !root.child('profileDetails').child($cardUserId).exists() && !root.child('profileContacts').child($cardUserId).exists() && !root.child('profileWorkflow').child($cardUserId).exists() && !root.child('profileTechnical').child($cardUserId).exists()))))) || (!newData.exists() && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardUserId).child('status').val() == 'publishing'))))))",
                   ".validate": "!newData.exists() || (newData.hasChildren(['fields', 'updatedAt', 'cardUserId', 'editorUserId']) && newData.child('editorUserId').val() == $editorUserId && newData.child('cardUserId').val() == $cardUserId && newData.child('updatedAt').isNumber() && ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') || (newData.child('adminOnly').val() == data.child('adminOnly').val() && newData.child('proposal').hasChildren(['id', 'revision', 'originalValues', 'replacements']) && newData.child('proposal').child('id').isString() && newData.child('proposal').child('id').val().length > 0 && (!newData.child('proposal').child('status').exists() || newData.child('proposal').child('status').val() == 'pendingReview') && (!newData.child('proposal').child('createdBy').exists() || newData.child('proposal').child('createdBy').val() == $editorUserId) && (!newData.child('proposal').child('actorUid').exists() || newData.child('proposal').child('actorUid').val() == $editorUserId) && !newData.child('proposal').child('approvedBy').exists() && !newData.child('proposal').child('approvedAt').exists() && !newData.child('proposal').child('acceptedBy').exists() && !newData.child('proposal').child('acceptedAt').exists() && newData.child('proposal').child('revision').isNumber() && newData.child('proposal').child('originalValues').isString() && newData.child('proposal').child('replacements').isString() && ((!data.child('proposal').exists() && newData.child('proposal').child('revision').val() == 1) || (data.child('proposal').child('revision').isNumber() && newData.child('proposal').child('revision').val() == data.child('proposal').child('revision').val() + 1 && newData.child('proposal').child('id').val() == data.child('proposal').child('id').val() && newData.child('proposal').child('createdAt').val() == data.child('proposal').child('createdAt').val())))))",
                   "fields": {
                     "$fieldName": {
@@ -944,6 +943,145 @@
               "$editorUid": {
                 ".write": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') || (auth.uid == $editorUid && newData.exists() && root.child('multiData').child('profileProposals').child('live').child('heads').child('update').child($cardId).child($editorUid).exists())))",
                 ".validate": "newData.isNumber()"
+              }
+            }
+          },
+          "cards": {
+            "$cardId": {
+              ".read": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && auth != null",
+              ".write": "(root.child('profileProposalControl').child('activeWriter').val() == 'unified') && (auth != null && ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') || (newData.exists() ? root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(auth.uid).child($cardId).exists() : data.child('createdBy').val() == auth.uid)))",
+              ".validate": "!newData.exists() || (newData.hasChildren(['createdBy', 'status', 'revision', 'updatedAt']) && ((auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') || newData.child('createdBy').val() == auth.uid) && root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('operation').val() == 'create' && (root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('status').val() == 'private' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('status').val() == 'publishing') && newData.child('status').val() == root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('status').val() && newData.child('revision').val() == root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('revision').val() && ((!newData.child('proposalId').exists() && !root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('proposalId').exists()) || newData.child('proposalId').val() == root.child('multiData').child('profileProposals').child('live').child('heads').child('create').child(newData.child('createdBy').val()).child($cardId).child('proposalId').val()) && !root.child('matchingCards').child($cardId).exists() && !root.child('profileDetails').child($cardId).exists() && !root.child('profileContacts').child($cardId).exists() && !root.child('profileWorkflow').child($cardId).exists() && !root.child('profileTechnical').child($cardId).exists())",
+              "name": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "surnameShort": {
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 20) || newData.hasChildren()",
+                "$version": {
+                  ".validate": "newData.isString() && newData.val().length <= 20"
+                }
+              },
+              "birth": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "city": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "region": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "country": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "role": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "height": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "weight": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "bmi": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "rh": {
+                ".validate": "!newData.exists() || (newData.isString() && (newData.val() == '+' || newData.val() == '-'))"
+              },
+              "ownKids": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "csection": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "lastDelivery": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "maritalStatus": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "experience": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "eyeColor": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "hairColor": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "agencyName": {
+                ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber() || newData.isBoolean() || newData.hasChildren()",
+                "$version": {
+                  ".validate": "(newData.isString() && newData.val().length <= 200) || newData.isNumber()"
+                }
+              },
+              "seekingRole": {
+                ".validate": "newData.isString() && (newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both' || (newData.val().length <= 11 && newData.val().matches(/^(ed|sm|ag|cl)(,(ed|sm|ag|cl))*$/)))"
+              },
+              "createdBy": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
+              },
+              "status": {
+                ".validate": "newData.isString() && (newData.val() == 'private' || newData.val() == 'pendingReview' || newData.val() == 'publishing')"
+              },
+              "revision": {
+                ".validate": "newData.isNumber() && newData.val() > 0"
+              },
+              "proposalId": {
+                ".validate": "newData.isString() && newData.val().length <= 256"
+              },
+              "updatedAt": {
+                ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
+              },
+              "$other": {
+                ".validate": false
               }
             }
           }

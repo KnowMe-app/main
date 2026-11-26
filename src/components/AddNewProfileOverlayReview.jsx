@@ -14,7 +14,11 @@ import { INDEXABLE_DRAFT_STATUSES } from 'utils/profileDraftIndexing';
 import { resolveCanonicalFieldName } from 'utils/profileNodeSchema';
 import { profileProposalService } from 'utils/profileProposalRepository';
 import { getFieldLabel, pickerFields } from './formFields';
-import { fetchMatchingCardsByIds } from './config';
+import { auth, database, fetchMatchingCardsByIds } from './config';
+import { hasFilledProfileDraftData } from 'utils/profileDraftContent';
+import { backfillProfileDraftCards } from 'utils/profileDraftCard';
+import { loadAllCreateProfileMutations } from 'utils/profileMutations';
+import { ADMIN_UIDS } from 'utils/accessLevel';
 import { ToolButton, ToolCount, ToolDrawerNote } from './AddNewProfileAdminPanel.styled';
 
 const Wrap = styled.div`
@@ -197,10 +201,21 @@ export const loadProposalReviewQueue = async () => {
     profileProposalService.listDrafts({ review: true, operation: 'create' }),
     listPendingOverlayCards({ includeRecords: true }),
   ]);
-  const creates = drafts.filter(draft => draft.status === 'pendingReview');
-  const { cards } = overlays.length
-    ? await fetchMatchingCardsByIds(overlays.map(entry => entry.cardUserId))
-    : { cards: {} };
+  // Порожня чернетка (форму відкрили й покинули) — не пропозиція: адмінові в
+  // ній нема чого вирішувати. Запис лишається в базі, у черзі його немає.
+  const creates = drafts.filter(draft => draft.status === 'pendingReview' && hasFilledProfileDraftData(draft.data));
+  const authorIds = [
+    ...creates.map(draft => draft.createdBy),
+    ...overlays.flatMap(entry => Object.keys(entry.overlaysByEditor || {})),
+  ];
+  const [{ cards }, { cards: authorCards }] = await Promise.all([
+    overlays.length ? fetchMatchingCardsByIds(overlays.map(entry => entry.cardUserId)) : { cards: {} },
+    authorIds.length ? fetchMatchingCardsByIds(authorIds).catch(() => ({ cards: {} })) : { cards: {} },
+  ]);
+  // Автор — людина, а не uid: імʼя з його картки, а без картки — сам uid.
+  const authorNames = Object.fromEntries(Object.entries(authorCards || {})
+    .map(([uid, card]) => [uid, describeCard(card)])
+    .filter(([, name]) => name));
   const activeDrafts = new Map(drafts.filter(draft => INDEXABLE_DRAFT_STATUSES.has(draft.status))
     .map(draft => [draft.reservedCardId, draft]));
   const entries = [
@@ -210,7 +225,22 @@ export const loadProposalReviewQueue = async () => {
       targetDraft: getLinkedCreateDraft(entry, activeDrafts, cards),
     })),
   ].sort((left, right) => (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0));
-  return { entries, cards };
+  return { entries, cards, authorNames };
+};
+
+// Картки чернеток, заведених до появи `cards` (див. `utils/profileDraftCard`),
+// дописує повний адмін, відкривши чергу. Раз на вкладку; запис ідемпотентний.
+let draftCardsBackfilled = false;
+export const backfillDraftCardsOnce = async actorUid => {
+  if (draftCardsBackfilled || !ADMIN_UIDS.includes(actorUid)) return 0;
+  draftCardsBackfilled = true;
+  try {
+    return await backfillProfileDraftCards(database, await loadAllCreateProfileMutations());
+  } catch (error) {
+    draftCardsBackfilled = false;
+    console.warn('[ProposalReviewQueue] картки чернеток не дописано', error);
+    return 0;
+  }
 };
 
 const reviewValue = async (action, decision) => {
@@ -243,8 +273,8 @@ const rowDecision = ({ editorUserId, value, replacement }) => ({
   editorUserId, value, ...(replacement && { replacement }),
 });
 
-const proposalMeta = ({ author, revision, date }) => [
-  author && `Автор ${author}`,
+const proposalMeta = ({ author, authorNames, revision, date }) => [
+  author && `Автор ${authorNames?.[author] || author}`,
   Number.isSafeInteger(revision) && `Ревізія ${revision}`,
   date,
 ].filter(Boolean).join(' · ');
@@ -267,14 +297,14 @@ const ProposalCardHeader = ({ title, caption, metadata, busy, onOpen }) => (
   </CardHead>
 );
 
-const CreateCard = ({ entry, busy, readOnly, onOpen, onAccept, onReject }) => {
+const CreateCard = ({ entry, authorNames, busy, readOnly, onOpen, onAccept, onReject }) => {
   const { reservedCardId, createdBy, data, revision, updatedAt } = entry;
   return (
     <CardShell>
       <ProposalCardHeader
         title={describeCard(data) || reservedCardId}
         caption={`Нова анкета · ${reservedCardId}`}
-        metadata={proposalMeta({ author: createdBy, revision, date: formatUpdatedAt(updatedAt) })}
+        metadata={proposalMeta({ author: createdBy, authorNames, revision, date: formatUpdatedAt(updatedAt) })}
         busy={busy}
         onOpen={() => onOpen(reservedCardId)}
       />
@@ -291,7 +321,7 @@ const CreateCard = ({ entry, busy, readOnly, onOpen, onAccept, onReject }) => {
 };
 
 const OverlayCard = ({
-  entry, card, targetDraft, busy, readOnly, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen,
+  entry, card, targetDraft, authorNames, busy, readOnly, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen,
 }) => {
   const [showCurrent, setShowCurrent] = useState(false);
   const [current, setCurrent] = useState({ status: 'idle', values: null });
@@ -357,6 +387,7 @@ const OverlayCard = ({
                 {row.isDeleted ? <PreviousValue>{row.value}</PreviousValue> : row.value}
                 <CardMeta>{proposalMeta({
                   author: row.editorUserId,
+                  authorNames,
                   revision: entry.recordsByEditor?.[row.editorUserId]?.proposal?.revision,
                   date: formatUpdatedAt(entry.overlaysByEditor?.[row.editorUserId]?.updatedAt),
                 })}</CardMeta>
@@ -409,8 +440,8 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
   const refresh = useCallback(async () => {
     setState(prev => ({ ...prev, status: 'loading', error: '' }));
     try {
-      const { entries, cards } = await loadProposalReviewQueue();
-      setState({ status: 'ready', entries, cards, error: '' });
+      const { entries, cards, authorNames } = await loadProposalReviewQueue();
+      setState({ status: 'ready', entries, cards, authorNames, error: '' });
     } catch (error) {
       // Відмова читання — не порожня черга. Найчастіша причина в тому, що
       // `database.rules.json` не викотили руками: код уже вміє читати корінь,
@@ -426,7 +457,8 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    if (!readOnly) backfillDraftCardsOnce(auth?.currentUser?.uid);
+  }, [refresh, readOnly]);
 
   const runAction = useCallback(async (action, successMessage, failureMessage) => {
     setBusy(true);
@@ -522,6 +554,7 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
         <CreateCard
           key={`${operation}:${key}`}
           entry={entry}
+          authorNames={state.authorNames}
           busy={busy}
           readOnly={readOnly}
           onOpen={onOpenDraft}
@@ -534,6 +567,7 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
           entry={entry}
           card={state.cards[entry.cardUserId]}
           targetDraft={targetDraft}
+          authorNames={state.authorNames}
           busy={busy}
           readOnly={readOnly}
           onAcceptValue={acceptValue}

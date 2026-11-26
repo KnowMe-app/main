@@ -193,6 +193,20 @@ describe('ProposalReviewQueue', () => {
     expect(listDrafts).toHaveBeenCalledWith({ review: true, operation: 'create' });
   });
 
+  it('names the author from their card and leaves abandoned empty drafts out of the queue', async () => {
+    listPendingOverlayCards.mockResolvedValue([]);
+    listDrafts.mockResolvedValue([CREATE, { ...CREATE, id: 'empty', reservedCardId: 'EMPTY1', data: { userId: 'EMPTY1' } }]);
+    fetchMatchingCardsByIds.mockImplementation(async ids => ({
+      cards: ids.includes('authorA') ? { authorA: { name: 'Ірина' } } : {}, missingIds: [],
+    }));
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={jest.fn()} />);
+
+    const cards = await screen.findAllByRole('article');
+    expect(cards).toHaveLength(1);
+    expect(within(cards[0]).getByText(/Автор Ірина · Ревізія 3/)).toBeInTheDocument();
+    expect(screen.queryByText(/EMPTY1/)).not.toBeInTheDocument();
+  });
+
   it.each([CREATE.id, undefined])('identifies an active create draft as the target of a contribution (%s)', async linkedId => {
     const record = {
       ...LAYER,

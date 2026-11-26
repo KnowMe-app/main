@@ -12,6 +12,7 @@ import {
 import { canGrantProfilePrivileges } from './accessLevel';
 import { buildOverlayFromDraft, collectOverlaySearchIdValues, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { getProfileMutationOwnerPath } from './profileDraftIndexing';
+import { removeProfileDraftCard, writeProfileDraftCard } from './profileDraftCard';
 import { appendProfileProposalJournal } from './profileProposalJournal';
 import { profileProposalPaths, usesUnifiedProposalStorage } from './profileProposalStoragePaths';
 import { PROFILE_NODES } from './profileNodeSchema';
@@ -532,6 +533,10 @@ export const saveCreateProfileMutation = async ({
   // відкривається рівно авторові й службовому читачеві (див.
   // `PROFILE_MUTATION_OWNERS_NODE`).
   await indexDraftOwner(cardId, mutation.createdBy || creatorUid);
+  // Картка чернетки — те, що бачить про неї сторонній читач (див.
+  // `utils/profileDraftCard`). Пишеться після запису: правило перевіряє,
+  // що чернетка вже лежить під автором.
+  await writeProfileDraftCard(database, cardId, mutation);
   // Cleanup is idempotent bookkeeping after the revision is already committed.
   await releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(error => {
     console.warn('[profileMutations] старі заявки на унікальність не знято', { cardId, error });
@@ -820,6 +825,8 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     });
   }
   releaseProfileIdentities(cardId, (pendingMutation.identityKeys || []).filter(key => !identityKeys.includes(key))).catch(() => {});
+  // Опублікована анкета має власну картку стрічки; картку чернетки знімаємо.
+  await removeProfileDraftCard(database, cardId);
   return candidateProfile;
 };
 
@@ -854,6 +861,8 @@ export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expected
   });
 
   await releaseProfileIdentities(cardId, mutation.identityKeys || []).catch(() => {});
+  // Повернута автору чернетка лишається видимою всім на рівні картки.
+  await writeProfileDraftCard(database, cardId, mutation);
   return mutation;
 };
 
@@ -965,6 +974,9 @@ export const deleteCreateProfileMutation = async ({ cardId, creatorUid, expected
 
   await step('overlays', () => (guarded ? purgeCardOverlays(cardId, { throwOnError: true }) : purgeCardOverlays(cardId)));
   await step('publicComments', () => remove(ref(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${cardId}`)));
+  await step('draftCard', async () => {
+    if (usesUnifiedProposalStorage && !(await removeProfileDraftCard(database, cardId))) throw new Error('draft card not removed');
+  });
   if (guarded) {
     await step('draftOwner', async () => {
       const ownerPath = getProfileMutationOwnerPath(cardId);
